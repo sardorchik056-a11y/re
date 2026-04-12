@@ -2,7 +2,7 @@
 duels.py — модуль дуэлей (группа + личка, без таймаута, без БД)
 
 Команды:
-  /cubx<N> <сумма>        🎲 до 4 очков (у кого больше — очко)
+  /cubx<N> <сумма>        🎲 до N очков (у кого больше — очко)
   /cubtotal<N> <сумма>    🎲 N бросков, побеждает сумма
   /dartx<N> <сумма>       🎯
   /darttotal<N> <сумма>   🎯
@@ -28,8 +28,6 @@ from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 # ══════════════════════════════════════════════════════════════════════════════
 #  КОНФИГ
 # ══════════════════════════════════════════════════════════════════════════════
-
-WIN_SCORE = 4
 
 DICE_EMOJI = {
     "cub":    "🎲",
@@ -66,7 +64,8 @@ class Game:
     chat_id:           int
     game_type:         str
     mode:              str
-    rounds:            int
+    rounds:            int       # для total-режима — кол-во бросков каждого
+    win_score:         int       # для x-режима — сколько очков нужно победить (= N из команды)
     bet:               float
     player1:           Player
     player2:           Optional[Player] = None
@@ -122,8 +121,9 @@ def _get_bet(text: str) -> Optional[float]:
 def _fmt_name(u) -> str:
     return (f"{u.first_name or ''} {u.last_name or ''}".strip()) or str(u.id)
 
-def _score_bar(pts: int) -> str:
-    return "🟢" * pts + "⚪" * (WIN_SCORE - pts)
+def _score_bar(pts: int, win_score: int) -> str:
+    """Полоска прогресса — зелёные кружки до win_score."""
+    return "🟢" * pts + "⚪" * (win_score - pts)
 
 def _kb_lobby() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
@@ -141,7 +141,8 @@ def _kb_cancel() -> InlineKeyboardMarkup:
 
 def _t_lobby(g: Game) -> str:
     e = DICE_EMOJI[g.game_type]
-    mode_lbl = f"до {WIN_SCORE} очков" if g.mode == "x" else f"{g.rounds} бросков • сумма"
+    # x-режим: показываем до скольки очков, total: кол-во бросков
+    mode_lbl = f"до {g.win_score} очков" if g.mode == "x" else f"{g.rounds} бросков • сумма"
     return (
         f"{e} <b>Дуэль открыта!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -157,7 +158,7 @@ def _t_x(g: Game) -> str:
     """
     Очковый режим: оба бросают в любом порядке.
     Раунд завершается когда оба бросили — сравниваем значения.
-    Показывает итог предыдущего раунда (ничья / кто выиграл броск).
+    Показывает итог предыдущего раунда (ничья / кто выиграл бросок).
     """
     e = DICE_EMOJI[g.game_type]
     p1, p2 = g.player1, g.player2
@@ -172,10 +173,10 @@ def _t_x(g: Game) -> str:
     result_line = f"\n💬 {g.last_round_result}\n\n" if g.last_round_result else "\n"
 
     return (
-        f"{e} <b>Раунд {rnd}</b>\n"
+        f"{e} <b>Раунд {rnd}  |  до {g.win_score} очков</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔴 {p1.display}  {_score_bar(p1.points)}  {status(p1, g.p1_round_val)}\n"
-        f"🔵 {p2.display}  {_score_bar(p2.points)}  {status(p2, g.p2_round_val)}\n"
+        f"🔴 {p1.display}  {_score_bar(p1.points, g.win_score)}  {status(p1, g.p1_round_val)}\n"
+        f"🔵 {p2.display}  {_score_bar(p2.points, g.win_score)}  {status(p2, g.p2_round_val)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━"
         f"{result_line}"
         f"Оба бросайте в любом порядке — ответьте на это сообщение эмодзи {e}"
@@ -183,7 +184,7 @@ def _t_x(g: Game) -> str:
 
 
 def _t_total(g: Game) -> str:
-    """Свободный режим: каждый бросает до N раз в любом порядке."""
+    """Суммарный режим: каждый бросает N раз в любом порядке."""
     e = DICE_EMOJI[g.game_type]
     p1, p2 = g.player1, g.player2
     s1, s2 = sum(p1.scores), sum(p2.scores)
@@ -299,6 +300,7 @@ def register(bot: telebot.TeleBot):
     #  бросили. После каждого раунда показывается итоговый комментарий:
     #    • кто выиграл бросок и новый счёт
     #    • или «ничья — счёт прежний» если значения равны
+    #  Победа — первый кто набрал g.win_score очков (= N из команды)
     # ──────────────────────────────────────────────────────────────────────
 
     def _handle_x(g: Game, uid: int, val: int):
@@ -341,9 +343,10 @@ def register(bot: telebot.TeleBot):
                 )
             # ─────────────────────────────────────────────────────────────
 
-            if p1.points >= WIN_SCORE:
+            # Победа — первый кто достиг g.win_score (N из команды)
+            if p1.points >= g.win_score:
                 end_game(g, winner=p1)
-            elif p2.points >= WIN_SCORE:
+            elif p2.points >= g.win_score:
                 end_game(g, winner=p2)
             else:
                 # Удаляем сообщение прошлого раунда, шлём новое с комментарием
@@ -368,7 +371,7 @@ def register(bot: telebot.TeleBot):
             if uid != p1.uid:
                 return
             if len(p1.scores) >= g.rounds:
-                return  # p1 уже исчерпал броски (не должно быть, но страховка)
+                return
             p1.scores.append(val)
         else:
             # p1 уже бросил в этом раунде → ход p2
@@ -414,8 +417,15 @@ def register(bot: telebot.TeleBot):
                 return
             p1   = Player(uid=uid, name=_fmt_name(message.from_user),
                           username=message.from_user.username or "")
-            game = Game(chat_id=chat_id, game_type=gtype, mode=mode,
-                        rounds=rounds, bet=bet, player1=p1)
+            game = Game(
+                chat_id=chat_id,
+                game_type=gtype,
+                mode=mode,
+                rounds=rounds,      # total-режим: кол-во бросков каждого
+                win_score=rounds,   # x-режим: до N очков (= то же число из команды)
+                bet=bet,
+                player1=p1,
+            )
             _set(game)
 
         sent = bot.send_message(
