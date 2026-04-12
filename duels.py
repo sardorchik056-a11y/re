@@ -130,12 +130,12 @@ def _score_bar(pts: int, win_score: int) -> str:
 
 def _kb_lobby() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("⚔️ Принять вызов", callback_data="duel_join"))
+    kb.add(InlineKeyboardButton("➕Присоедениться", callback_data="duel_join"))
     return kb
 
 def _kb_cancel() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="duel_cancel"))
+    kb.add(InlineKeyboardButton("❌Отменить", callback_data="duel_cancel"))
     return kb
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -146,9 +146,9 @@ def _t_lobby(g: Game) -> str:
     e = DICE_EMOJI[g.game_type]
     mode_lbl = f"до {g.win_score} очков" if g.mode == "x" else f"{g.rounds} бросков • сумма"
     return (
-        f"{e} <b>Дуэль открыта!</b>\n"
+        f"{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 Создатель:  <b>{g.player1.display}</b>\n"
+        f"👤 Игрок:  <b>{g.player1.display}</b>\n"
         f"💰 Ставка:     <b>${g.bet:,.2f}</b>\n"
         f"🎮 Режим:      <b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -176,13 +176,13 @@ def _t_x(g: Game) -> str:
     result_line = f"\n💬 {g.last_round_result}\n\n" if g.last_round_result else "\n"
 
     return (
-        f"{e} <b>Раунд {rnd}  |  до {g.win_score} очков</b>\n"
+        f"{e} <b>Раунд {rnd}  |  до {g.win_score} очков!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{ico} {p1.display}  {_score_bar(p1.points, g.win_score)}  {status(g.p1_round_val)}\n"
         f"{ico} {p2.display}  {_score_bar(p2.points, g.win_score)}  {status(g.p2_round_val)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━"
         f"{result_line}"
-        f"Оба бросайте в любом порядке — ответьте на это сообщение эмодзи {e}"
+        f"Отправьте {e} — в ответ на это сообщение!"
     )
 
 
@@ -206,7 +206,7 @@ def _t_total(g: Game) -> str:
         f"{ico} {p1.display}:  {row(p1, s1)}\n"
         f"{ico} {p2.display}:  {row(p2, s2)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Оба бросают в любом порядке — ответьте на это сообщение эмодзи {e}"
+        f"Отправьте {e} — в ответ на это сообщение!"
     )
 
 
@@ -324,19 +324,19 @@ def register(bot: telebot.TeleBot):
                 p1.points += 1
                 g.last_round_result = (
                     f"Раунд {rnd_num}: {p1.display} выиграл бросок "
-                    f"({v1} vs {v2}) — счёт {p1.points}:{p2.points} 🔴"
+                    f"({v1} vs {v2}) — счёт {p1.points}:{p2.points}"
                 )
             elif v2 > v1:
                 p2.points += 1
                 g.last_round_result = (
                     f"Раунд {rnd_num}: {p2.display} выиграл бросок "
-                    f"({v2} vs {v1}) — счёт {p1.points}:{p2.points} 🔵"
+                    f"({v2} vs {v1}) — счёт {p1.points}:{p2.points}"
                 )
             else:
                 # Ничья в раунде — очки не меняются, счёт прежний
                 g.last_round_result = (
                     f"Раунд {rnd_num}: ничья ({v1} = {v2}) — "
-                    f"счёт прежний {p1.points}:{p2.points} 🤝"
+                    f"счёт прежний {p1.points}:{p2.points}"
                 )
             # ─────────────────────────────────────────────────────────────
 
