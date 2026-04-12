@@ -57,7 +57,7 @@ DICE_EMOJI = {
     "foot":   "⚽",
 }
 
-BOT_USERNAME = "YourBotUsername"   # ← замени на реальный юзернейм бота
+BOT_USERNAME = "TEST_ADVdbot"   # ← замени на реальный юзернейм бота
 
 
 def btn(text: str, callback_data: str, emoji_id: str = "") -> InlineKeyboardButton:
