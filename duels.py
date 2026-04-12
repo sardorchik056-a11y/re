@@ -62,8 +62,8 @@ NUM_EMOJI = {
     2: '<tg-emoji emoji-id="5381990043642502553">2️⃣</tg-emoji>',
     3: '<tg-emoji emoji-id="5381879959335738545">3️⃣</tg-emoji>',
     4: '<tg-emoji emoji-id="5382054253403577563">4️⃣</tg-emoji>',
-    5: '<tg-emoji emoji-id="5390966190283694453">5️⃣</tg-emoji>',
-    6: '<tg-emoji emoji-id="5382132232829804982">6️⃣</tg-emoji>',
+    5: '<tg-emoji emoji-id="5391197405553107640">5️⃣</tg-emoji>',
+    6: '<tg-emoji emoji-id="5390966190283694453">6️⃣</tg-emoji>',
 }
 
 # Глобальный замок для операций с играми (предотвращает race condition)
@@ -680,7 +680,7 @@ def register(bot: telebot.TeleBot):
             db.game_delete(target["id"])
 
         safe_del(chat_id, target["lobby_msg"])
-        bot.send_message(chat_id, f"❌ Дуэль удалена. Ставка возвращена.", parse_mode="HTML")
+        bot.send_message(chat_id, f"❌ Дуэль удалена. Ставка возвращена!", parse_mode="HTML")
 
     # ── /delall — удалить все свои lobby-дуэли ──────────────────────────────
 
