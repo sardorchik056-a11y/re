@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 #  КОНФИГ
 # ══════════════════════════════════════════════════════════════════════════════
 
-CRYPTO_PAY_TOKEN  = "552018:AAmEzVekZI0E1Qcpi0ccOxbkOMk01J2Qs2n"          # @CryptoBot → /pay
-CRYPTO_PAY_URL    = "https://pay.crypt.bot/api"     # mainnet
-# CRYPTO_PAY_URL  = "https://testnet-pay.crypt.bot/api"   # testnet
+CRYPTO_PAY_TOKEN  = "552018:AAmEzVekZI0E1Qcpi0ccOxbkOMk01J2Qs2n"
+CRYPTO_PAY_URL    = "https://pay.crypt.bot/api"
+# CRYPTO_PAY_URL  = "https://testnet-pay.crypt.bot/api"
 
 DEFAULT_ASSET     = "USDT"
 
@@ -44,31 +44,52 @@ DEPOSIT_MAX       = 10_000.0
 WITHDRAW_MIN      = 0.10
 WITHDRAW_MAX      = 10_000.0
 
-POLL_INTERVAL     = 3           # секунды между проверками оплаты
-INVOICE_EXPIRE_IN = 300         # 5 минут срок жизни счёта
+POLL_INTERVAL     = 3
+INVOICE_EXPIRE_IN = 300
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  КАСТОМНЫЕ ЭМОДЗИ
+#  EMOJI IDs для кнопок (icon_custom_emoji_id — как в main.py)
 # ══════════════════════════════════════════════════════════════════════════════
 
-E_WALLET   = '<tg-emoji emoji-id="5258204546391351475">💳</tg-emoji>'
-E_MONEY    = '<tg-emoji emoji-id="5904462880941545555">💰</tg-emoji>'
-E_CLOCK    = '<tg-emoji emoji-id="6030537810509828330">⏳</tg-emoji>'
-E_CHECK    = '<tg-emoji emoji-id="6030776052345737530">✅</tg-emoji>'
-E_CROSS    = '<tg-emoji emoji-id="6039539366177541657">❌</tg-emoji>'
-E_DIAMOND  = '<tg-emoji emoji-id="5258185631355378853">💎</tg-emoji>'
-E_SEND     = '<tg-emoji emoji-id="5258043150110301407">📤</tg-emoji>'
-E_RECEIPT  = '<tg-emoji emoji-id="6030776052345737530">🧾</tg-emoji>'
-E_STAR     = '<tg-emoji emoji-id="5258185631355378853">⭐</tg-emoji>'
-E_FIRE     = '<tg-emoji emoji-id="6039496266180726678">🔥</tg-emoji>'
-E_LOCK     = '<tg-emoji emoji-id="5258330865674494479">🔒</tg-emoji>'
-E_PAY      = '<tg-emoji emoji-id="5260730055880876557">💸</tg-emoji>'
-E_BACK     = '<tg-emoji emoji-id="6039539366177541657">◀️</tg-emoji>'
-E_CANCEL   = '<tg-emoji emoji-id="6039539366177541657">🚫</tg-emoji>'
-E_WARNING  = '<tg-emoji emoji-id="5258215846450305872">⚠️</tg-emoji>'
-E_BOLT     = '<tg-emoji emoji-id="5258215846450305872">⚡</tg-emoji>'
-E_GIFT     = '<tg-emoji emoji-id="5258501105293205250">🎁</tg-emoji>'
-E_LINK     = '<tg-emoji emoji-id="5260730055880876557">🔗</tg-emoji>'
+EMOJI_PAY      = "5904462880941545555"   # кнопка оплатить
+EMOJI_CANCEL   = "5258043150110301407"   # кнопка отменить
+EMOJI_BACK     = "6039539366177541657"   # кнопка назад
+EMOJI_CHECK    = "5890848474563352982"   # кнопка получить чек
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  КАСТОМНЫЕ ЭМОДЗИ ДЛЯ ТЕКСТОВ (tg-emoji в теле сообщений)
+# ══════════════════════════════════════════════════════════════════════════════
+
+E_WALLET   = '<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji>'
+E_MONEY    = '<tg-emoji emoji-id="5258204546391351475">💰</tg-emoji>'
+E_CLOCK    = '<tg-emoji emoji-id="5258204546391351475">⏳</tg-emoji>'
+E_DIAMOND  = '<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji>'
+E_SEND     = '<tg-emoji emoji-id="5258204546391351475">📤</tg-emoji>'
+E_BOLT     = '<tg-emoji emoji-id="5258204546391351475">⚡</tg-emoji>'
+E_STAR     = '<tg-emoji emoji-id="5258204546391351475">⭐</tg-emoji>'
+E_FIRE     = '<tg-emoji emoji-id="5258204546391351475">🔥</tg-emoji>'
+E_LOCK     = '<tg-emoji emoji-id="5258204546391351475">🔒</tg-emoji>'
+E_PAY      = '<tg-emoji emoji-id="5258204546391351475">💸</tg-emoji>'
+E_CROSS    = '<tg-emoji emoji-id="5258204546391351475">❌</tg-emoji>'
+E_WARNING  = '<tg-emoji emoji-id="5258204546391351475">⚠️</tg-emoji>'
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ХЕЛПЕРЫ ДЛЯ КНОПОК (идентично main.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _btn(text: str, callback_data: str, emoji_id: str = "") -> InlineKeyboardButton:
+    b = InlineKeyboardButton(text=text, callback_data=callback_data)
+    if emoji_id:
+        b.icon_custom_emoji_id = emoji_id
+    return b
+
+
+def _url_btn(text: str, url: str, emoji_id: str = "") -> InlineKeyboardButton:
+    b = InlineKeyboardButton(text=text, url=url)
+    if emoji_id:
+        b.icon_custom_emoji_id = emoji_id
+    return b
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CryptoPay API клиент
@@ -131,10 +152,9 @@ class CryptoPayClient:
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  FSM — состояния пользователей
-#  Храним: step, chat_id, message_id (сообщение которое будем редактировать)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_states: dict = {}    # {uid: {step, chat_id, message_id, ...}}
+_states: dict = {}
 _states_lock  = threading.Lock()
 
 
@@ -165,45 +185,27 @@ def _clear_state(uid: int):
 
 def _kb_cancel_input() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(
-        f"{E_CANCEL} Отменить",
-        callback_data="pay_cancel"
-    ))
+    kb.add(_btn("Отменить", "pay_cancel", EMOJI_CANCEL))
     return kb
 
 
 def _kb_pay(pay_url: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(
-        f"{E_PAY} Оплатить через CryptoBot",
-        url=pay_url
-    ))
-    kb.add(InlineKeyboardButton(
-        f"{E_CANCEL} Отменить",
-        callback_data="pay_cancel"
-    ))
+    kb.add(_url_btn("Оплатить через CryptoBot", pay_url, EMOJI_PAY))
+    kb.add(_btn("Отменить", "pay_cancel", EMOJI_CANCEL))
     return kb
 
 
 def _kb_check(check_url: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(
-        f"{E_GIFT} Забрать чек в CryptoBot",
-        url=check_url
-    ))
-    kb.add(InlineKeyboardButton(
-        f"{E_BACK} Назад",
-        callback_data="profile"
-    ))
+    kb.add(_url_btn("Забрать чек в CryptoBot", check_url, EMOJI_CHECK))
+    kb.add(_btn("Назад", "profile", EMOJI_BACK))
     return kb
 
 
 def _kb_back_profile() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(
-        f"{E_BACK} Вернуться в профиль",
-        callback_data="profile"
-    ))
+    kb.add(_btn("Назад", "profile", EMOJI_BACK))
     return kb
 
 
@@ -304,7 +306,7 @@ def _edit(bot: telebot.TeleBot, chat_id: int, message_id: int,
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ФОНОВЫЙ ПОЛЛИНГ (каждые POLL_INTERVAL секунд)
+#  ФОНОВЫЙ ПОЛЛИНГ
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _start_poll_loop(bot: telebot.TeleBot, client: CryptoPayClient):
@@ -329,7 +331,6 @@ def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
         if not row or row["status"] != "pending":
             continue
 
-        # Атомарная смена статуса — защита от двойного зачисления
         if not db.deposit_confirm(invoice_id):
             continue
 
@@ -338,7 +339,6 @@ def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
         db.add_balance(uid, amount)
         new_balance = db.get_balance(uid)
 
-        # Если пользователь всё ещё смотрит на сообщение с инвойсом — редактируем его
         state = _get_state(uid)
         if state and state.get("step") == "deposit_waiting" \
                 and state.get("invoice_id") == invoice_id:
@@ -351,7 +351,6 @@ def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
             )
             _clear_state(uid)
         else:
-            # FSM уже сброшен (например, истёк счёт) — шлём отдельным сообщением
             try:
                 bot.send_message(
                     uid,
@@ -368,14 +367,12 @@ def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
 
 def open_deposit(bot: telebot.TeleBot, uid: int,
                  chat_id: int, message_id: int):
-    """Открывает экран пополнения редактированием сообщения."""
     _set_state(uid, "deposit_amount", chat_id=chat_id, message_id=message_id)
     _edit(bot, chat_id, message_id, _t_deposit_ask(), _kb_cancel_input())
 
 
 def open_withdraw(bot: telebot.TeleBot, uid: int,
                   chat_id: int, message_id: int):
-    """Открывает экран вывода редактированием сообщения."""
     balance = db.get_balance(uid)
     _set_state(uid, "withdraw_amount", chat_id=chat_id, message_id=message_id)
     _edit(bot, chat_id, message_id, _t_withdraw_ask(balance), _kb_cancel_input())
@@ -406,7 +403,6 @@ def register(bot: telebot.TeleBot):
         bot.answer_callback_query(call.id, "Отменено.")
 
         if state:
-            # Возвращаем экран профиля в то же сообщение
             import main as m
             _edit(
                 bot,
@@ -436,13 +432,11 @@ def register(bot: telebot.TeleBot):
         chat_id    = state["chat_id"]
         message_id = state["message_id"]
 
-        # Удаляем сообщение с суммой — не засоряем чат
         try:
             bot.delete_message(message.chat.id, message.message_id)
         except Exception:
             pass
 
-        # Парсим число
         raw = message.text.strip().replace(",", ".")
         try:
             amount = round(float(raw), 2)
@@ -498,7 +492,6 @@ def register(bot: telebot.TeleBot):
                 _clear_state(uid)
                 return
 
-            # FSM → ожидание оплаты
             _set_state(uid, "deposit_waiting",
                        chat_id=chat_id, message_id=message_id,
                        invoice_id=invoice_id, amount=amount)
@@ -506,7 +499,6 @@ def register(bot: telebot.TeleBot):
             _edit(bot, chat_id, message_id,
                   _t_deposit_invoice(amount), _kb_pay(pay_url))
 
-            # Таймер истечения: через INVOICE_EXPIRE_IN+2 сек показываем "истёк"
             def _expire():
                 time.sleep(INVOICE_EXPIRE_IN + 2)
                 s = _get_state(uid)
@@ -555,7 +547,6 @@ def register(bot: telebot.TeleBot):
             _edit(bot, chat_id, message_id,
                   f"{E_CLOCK} <b>Создаём чек...</b>", None)
 
-            # Атомарно: списать + создать заявку
             wid = db.withdrawal_create(uid, amount, DEFAULT_ASSET)
             if wid is None:
                 _edit(bot, chat_id, message_id,
@@ -566,7 +557,7 @@ def register(bot: telebot.TeleBot):
             check = client.create_check(asset=DEFAULT_ASSET, amount=amount)
 
             if not check:
-                db.withdrawal_set_failed(wid)   # возвращаем деньги
+                db.withdrawal_set_failed(wid)
                 _edit(bot, chat_id, message_id,
                       _t_withdraw_failed(), _kb_back_profile())
                 return
