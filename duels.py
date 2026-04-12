@@ -335,15 +335,14 @@ def register(bot: telebot.TeleBot):
         text = (
             f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 Соперник:  <b>{p1_d}</b>\n"
-            f"💎 Ставка:    <b>${g['bet']:,.2f}</b>\n"
-            f"🎮 Режим:     <b>{mode_lbl}</b>\n"
+            f"<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n"
+            f"<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:    <b>${g['bet']:,.2f}</b>\n"
+            f" <b>{mode_lbl}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Бросай {e} в ответ на сообщение в чате!"
         )
 
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("⚔️ Ваша игра", url=game_url))
+        kb.add(InlineKeyboardButton("Ваша игра", url=game_url))
 
         try:
             bot.send_message(joiner_uid, text, parse_mode="HTML", reply_markup=kb)
