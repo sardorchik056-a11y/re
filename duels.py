@@ -368,15 +368,13 @@ def register(bot: telebot.TeleBot):
                 db.player_add_point(game_id, p1_uid)
                 p1_pts += 1
                 lrr = (
-                    f"Раунд {rnd_num}: {p1_d} выиграл бросок "
-                    f"({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
+                    f"Раунд {rnd_num}: ({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
                 )
             elif v2 > v1:
                 db.player_add_point(game_id, p2_uid)
                 p2_pts += 1
                 lrr = (
-                    f"Раунд {rnd_num}: {p2_d} выиграл бросок "
-                    f"({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
+                    f"Раунд {rnd_num}:({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
                 )
             else:
                 lrr = (
