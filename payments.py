@@ -217,11 +217,9 @@ def _t_deposit_ask() -> str:
     return (
         f"{E_WALLET} <b>Пополнение баланса</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{E_MONEY} Введите сумму в <b>{DEFAULT_ASSET}</b>:\n\n"
-        f"{E_BOLT} Минимум: <b>${DEPOSIT_MIN:,.2f}</b>\n"
-        f"{E_STAR} Максимум: <b>${DEPOSIT_MAX:,.0f}</b>\n\n"
-        f"✏️ Напишите сумму в чат.\n"
-        f"Пример: <code>10</code> или <code>0.50</code>"
+        f"<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Введите сумму в <b>{DEFAULT_ASSET}</b>:\n\n"
+        f" Минимум: <b>${DEPOSIT_MIN:,.2f}</b>\n"
+        f" Максимум: <b>${DEPOSIT_MAX:,.0f}</b>\n"
     )
 
 
