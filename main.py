@@ -57,6 +57,8 @@ DICE_EMOJI = {
     "foot":   "⚽",
 }
 
+BOT_USERNAME = "YourBotUsername"   # ← замени на реальный юзернейм бота
+
 
 def btn(text: str, callback_data: str, emoji_id: str = "") -> InlineKeyboardButton:
     b = InlineKeyboardButton(text=text, callback_data=callback_data)
@@ -188,7 +190,7 @@ def text_stats(period: str = "all") -> str:
 
 def text_referrals(user) -> str:
     uid      = user.id
-    ref_link = f"https://t.me/YourBotUsername?start=ref{uid}"
+    ref_link = f"https://t.me/{BOT_USERNAME}?start=ref{uid}"
     invited, earned = db.get_referral_stats(uid)
     return (
         f'<tg-emoji emoji-id="{EMOJI_REFERRALS}">👥</tg-emoji> <b>Рефералы</b>\n'
@@ -247,7 +249,6 @@ def text_duel_view(g) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _resolve_target(target_raw: str):
-    """Возвращает (uid, None) или (None, error_text)."""
     if target_raw.startswith("@"):
         uid = db.resolve_username(target_raw[1:])
         if uid is None:
@@ -409,20 +410,71 @@ WELCOME_TEXT = (
 )
 
 
+def _parse_ref_from_start(text: str):
+    """
+    Парсит реферальный uid из параметра /start.
+    /start ref123456789  →  123456789 (int)
+    /start               →  None
+    """
+    parts = (text or "").strip().split(maxsplit=1)
+    if len(parts) < 2:
+        return None
+    payload = parts[1].strip()
+    if payload.startswith("ref"):
+        try:
+            return int(payload[3:])
+        except ValueError:
+            return None
+    return None
+
+
 @bot.message_handler(commands=["start", "menu"])
 def start_handler(message):
-    uid = message.from_user.id
-    db.ensure_user(
-        uid,
-        message.from_user.username or "",
-        (f"{message.from_user.first_name or ''} "
-         f"{message.from_user.last_name or ''}").strip(),
-    )
+    uid        = message.from_user.id
+    username   = message.from_user.username or ""
+    first_name = (
+        f"{message.from_user.first_name or ''} "
+        f"{message.from_user.last_name or ''}"
+    ).strip()
+
+    # Определяем реферера до записи в БД
+    ref_uid = _parse_ref_from_start(message.text)
+
+    # Защита: нельзя быть своим рефералом
+    if ref_uid == uid:
+        ref_uid = None
+
+    # Защита: реферер должен существовать в БД
+    if ref_uid is not None and db.is_new_user(ref_uid):
+        ref_uid = None  # Реферер не зарегистрирован — игнорируем
+
+    # Защита: ref_by записывается ТОЛЬКО при первой регистрации (ON CONFLICT DO UPDATE
+    # не трогает ref_by — логика внутри ensure_user)
+    is_new = db.is_new_user(uid)
+    db.ensure_user(uid, username, first_name, ref_by=ref_uid if is_new else None)
+
+    # Уведомить реферера если это новый пользователь
+    if is_new and ref_uid is not None:
+        try:
+            ref_row = db.get_user_row(ref_uid)
+            ref_invited, _ = db.get_referral_stats(ref_uid)
+            # ref_count обновляется в referral_try_reward при первом выигрыше —
+            # здесь шлём просто уведомление о регистрации реферала
+            bot.send_message(
+                ref_uid,
+                f'👥 <b>По вашей ссылке зарегистрировался новый пользователь!</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━━\n'
+                f'👤 <b>@{username}</b> присоединился к проекту.\n'
+                f'💡 Вы получите <b>1%</b> от его выигрышей автоматически.',
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
     bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=kb_main())
 
 
 # ── Главный callback_handler ─────────────────────────────────────────────────
-# Исключаем колбэки которые обрабатываются в duels.py и payments.py
 
 @bot.callback_query_handler(func=lambda call: call.data not in ("pay_cancel",)
     and not call.data.startswith("duel_join:")
@@ -452,8 +504,6 @@ def callback_handler(call):
             pass
 
     bot.answer_callback_query(call.id)
-
-    # ── Навигация ──────────────────────────────────────────────────────────
 
     if data == "main_menu":
         edit(WELCOME_TEXT, kb_main())
@@ -494,11 +544,9 @@ def callback_handler(call):
     elif data == "about":
         edit(text_about(), kb_about())
 
-    # ── Пополнение — редактируем это же сообщение ─────────────────────────
     elif data == "deposit":
         payments.open_deposit(bot, user.id, chat_id, msg_id)
 
-    # ── Вывод — редактируем это же сообщение ──────────────────────────────
     elif data == "withdraw":
         payments.open_withdraw(bot, user.id, chat_id, msg_id)
 
