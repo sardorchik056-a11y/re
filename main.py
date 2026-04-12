@@ -462,7 +462,7 @@ def start_handler(message):
             # здесь шлём просто уведомление о регистрации реферала
             bot.send_message(
                 ref_uid,
-                f'<tg-emoji emoji-id="6039496266180726678">👤</tg-emoji><b>Новый реферал!</b>\n'
+                f'<tg-emoji emoji-id="6039496266180726678">👤</tg-emoji><b>Новый реферал!</b>\n',
                 parse_mode="HTML",
             )
         except Exception:
