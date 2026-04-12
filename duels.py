@@ -148,8 +148,8 @@ def _t_lobby(g: Game) -> str:
     return (
         f"{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Игрок:  <b>{g.player1.display}</b>\n"
-        f"<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:     <b>${g.bet:,.2f}</b>\n\n"
+        f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Игрок:  <b>{g.player1.display}</b>\n'
+        f'<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:     <b>${g.bet:,.2f}</b>\n\n'
         f"<b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Нажми кнопку ниже чтобы присоедениться!"
@@ -219,7 +219,7 @@ def _t_finish(g: Game, winner: Optional[Player], draw=False) -> str:
     if draw:
         result = "🤝 <b>Ничья!</b> Ставки возвращаются."
     else:
-        result = f"<tg-emoji emoji-id="5461151367559141950">👤</tg-emoji> Победитель: <b>{winner.display}</b>!\n<tg-emoji emoji-id="5890848474563352982">👤</tg-emoji> Выигрыш: <b>${g.bet * 2:,.2f}</b>"
+        result = f'<tg-emoji emoji-id="5461151367559141950">👤</tg-emoji> Победитель: <b>{winner.display}</b>!\n<tg-emoji emoji-id="5890848474563352982">👤</tg-emoji> Выигрыш: <b>${g.bet * 2:,.2f}</b>'
     if g.mode == "x":
         detail = (
             f"{ico} {p1.display}: {p1.points} очк.\n"
