@@ -91,17 +91,17 @@ def kb_main() -> InlineKeyboardMarkup:
 
 def kb_back_main() -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
-    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
 def kb_profile() -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
     m.row(
-        btn("💳 Пополнить", "deposit",  EMOJI_DEPOSIT),
-        btn("📤 Вывести",   "withdraw", EMOJI_WITHDRAW),
+        btn("Пополнить", "deposit",  EMOJI_DEPOSIT),
+        btn("Вывести",   "withdraw", EMOJI_WITHDRAW),
     )
-    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
@@ -115,7 +115,7 @@ def kb_stats(active: str = "all") -> InlineKeyboardMarkup:
                        EMOJI_FILTER_DAY if key == "day" else
                        EMOJI_FILTER_WEK if key == "week" else EMOJI_FILTER_ALL))
     m.row(*row)
-    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
@@ -126,7 +126,7 @@ def kb_about() -> InlineKeyboardMarkup:
         url_btn("Поддержка", "https://t.me/yoursupport", EMOJI_SUPPORT),
     )
     m.row(url_btn("Новости", "https://t.me/yournews", EMOJI_NEWS))
-    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
@@ -137,14 +137,14 @@ def kb_active_games(games: list) -> InlineKeyboardMarkup:
         mode = "очки" if g["mode"] == "x" else "сумма"
         label = f"{e} ${g['bet']:,.2f} | {g['rounds']}р {mode}"
         m.row(InlineKeyboardButton(text=label, callback_data=f"duel_view:{g['id']}"))
-    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
 def kb_duel_view(game_id: int) -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
     m.row(InlineKeyboardButton(text="➕ Присоединиться", callback_data=f"duel_join:{game_id}"))
-    m.row(btn("◀️ Назад", "active_games", EMOJI_BACK))
+    m.row(btn("Назад", "active_games", EMOJI_BACK))
     return m
 
 # ══════════════════════════════════════════════════════════════════════════════
