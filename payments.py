@@ -217,7 +217,7 @@ def _t_deposit_ask() -> str:
     return (
         f"{E_WALLET} <b>Пополнение баланса</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Введите сумму в <b>{DEFAULT_ASSET}</b>:\n\n"
+        f'<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Введите сумму в <b>{DEFAULT_ASSET}</b>:\n\n'
         f" Минимум: <b>${DEPOSIT_MIN:,.2f}</b>\n"
         f" Максимум: <b>${DEPOSIT_MAX:,.0f}</b>\n"
     )
@@ -227,8 +227,8 @@ def _t_deposit_invoice(amount: float) -> str:
     return (
         f"{E_WALLET} <b>Счёт создан!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
-        f"<tg-emoji emoji-id="6030537810509828330">💎</tg-emoji> Срок действия: <b>5 минут</b>\n\n"
+        f'<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n'
+        f'<tg-emoji emoji-id="6030537810509828330">💎</tg-emoji> Срок действия: <b>5 минут</b>\n\n'
         f"Нажмите кнопку ниже и оплатите через @CryptoBot.\n"
         f"проверяется <b>автоматически</b> каждые {POLL_INTERVAL} сек."
     )
@@ -236,16 +236,16 @@ def _t_deposit_invoice(amount: float) -> str:
 
 def _t_deposit_success(amount: float, new_balance: float) -> str:
     return (
-        f"<tg-emoji emoji-id="5258185631355378853">💎</tg-emoji> <b>Успешное пополнение!</b>\n"
+        f'<tg-emoji emoji-id="5258185631355378853">💎</tg-emoji> <b>Успешное пополнение!</b>\n'
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<tg-emoji emoji-id="5890848474563352982">💎</tg-emoji> Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n"
-        f"<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Ваш баланс: <b>${new_balance:,.2f}</b>"
+        f'<tg-emoji emoji-id="5890848474563352982">💎</tg-emoji> Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n'
+        f'<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Ваш баланс: <b>${new_balance:,.2f}</b>'
     )
 
 
 def _t_deposit_expired() -> str:
     return (
-        f"<tg-emoji emoji-id="6030776052345737530">💎</tg-emoji> <b>Счёт истёк!</b>\n"
+        f'<tg-emoji emoji-id="6030776052345737530">💎</tg-emoji> <b>Счёт истёк!</b>\n'
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Время оплаты (5 мин) истекло.\n"
         f"Создайте новый счёт и попробуйте снова."
@@ -264,9 +264,9 @@ def _t_withdraw_ask(balance: float) -> str:
 
 def _t_withdraw_done(amount: float) -> str:
     return (
-        f"<tg-emoji emoji-id="6030776052345737530">💎</tg-emoji> <b>Вывод обработан!</b>\n"
+        f'<tg-emoji emoji-id="6030776052345737530">💎</tg-emoji> <b>Вывод обработан!</b>\n'
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
+        f'<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n'
         f"<i>Чек одноразовый — не передавайте ссылку третьим лицам!</i>"
     )
 
@@ -539,7 +539,7 @@ def register(bot: telebot.TeleBot):
 
             _clear_state(uid)
             _edit(bot, chat_id, message_id,
-                  f"<tg-emoji emoji-id="5357069174512303778">💎</tg-emoji> <b>Создаём чек...</b>", None)
+                  f'<tg-emoji emoji-id="5357069174512303778">💎</tg-emoji> <b>Создаём чек...</b>', None)
 
             wid = db.withdrawal_create(uid, amount, DEFAULT_ASSET)
             if wid is None:
