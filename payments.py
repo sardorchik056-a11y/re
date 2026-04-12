@@ -48,6 +48,29 @@ POLL_INTERVAL     = 3           # секунды между проверками
 INVOICE_EXPIRE_IN = 300         # 5 минут срок жизни счёта
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  КАСТОМНЫЕ ЭМОДЗИ
+# ══════════════════════════════════════════════════════════════════════════════
+
+E_WALLET   = '<tg-emoji emoji-id="5258204546391351475">💳</tg-emoji>'
+E_MONEY    = '<tg-emoji emoji-id="5904462880941545555">💰</tg-emoji>'
+E_CLOCK    = '<tg-emoji emoji-id="6030537810509828330">⏳</tg-emoji>'
+E_CHECK    = '<tg-emoji emoji-id="6030776052345737530">✅</tg-emoji>'
+E_CROSS    = '<tg-emoji emoji-id="6039539366177541657">❌</tg-emoji>'
+E_DIAMOND  = '<tg-emoji emoji-id="5258185631355378853">💎</tg-emoji>'
+E_SEND     = '<tg-emoji emoji-id="5258043150110301407">📤</tg-emoji>'
+E_RECEIPT  = '<tg-emoji emoji-id="6030776052345737530">🧾</tg-emoji>'
+E_STAR     = '<tg-emoji emoji-id="5258185631355378853">⭐</tg-emoji>'
+E_FIRE     = '<tg-emoji emoji-id="6039496266180726678">🔥</tg-emoji>'
+E_LOCK     = '<tg-emoji emoji-id="5258330865674494479">🔒</tg-emoji>'
+E_PAY      = '<tg-emoji emoji-id="5260730055880876557">💸</tg-emoji>'
+E_BACK     = '<tg-emoji emoji-id="6039539366177541657">◀️</tg-emoji>'
+E_CANCEL   = '<tg-emoji emoji-id="6039539366177541657">🚫</tg-emoji>'
+E_WARNING  = '<tg-emoji emoji-id="5258215846450305872">⚠️</tg-emoji>'
+E_BOLT     = '<tg-emoji emoji-id="5258215846450305872">⚡</tg-emoji>'
+E_GIFT     = '<tg-emoji emoji-id="5258501105293205250">🎁</tg-emoji>'
+E_LINK     = '<tg-emoji emoji-id="5260730055880876557">🔗</tg-emoji>'
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  CryptoPay API клиент
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -142,27 +165,45 @@ def _clear_state(uid: int):
 
 def _kb_cancel_input() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("❌Отмена", callback_data="pay_cancel"))
+    kb.add(InlineKeyboardButton(
+        f"{E_CANCEL} Отменить",
+        callback_data="pay_cancel"
+    ))
     return kb
 
 
 def _kb_pay(pay_url: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("Оплатить", url=pay_url))
-    kb.add(InlineKeyboardButton("❌Отменить", callback_data="pay_cancel"))
+    kb.add(InlineKeyboardButton(
+        f"{E_PAY} Оплатить через CryptoBot",
+        url=pay_url
+    ))
+    kb.add(InlineKeyboardButton(
+        f"{E_CANCEL} Отменить",
+        callback_data="pay_cancel"
+    ))
     return kb
 
 
 def _kb_check(check_url: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("Получить чек", url=check_url))
-    kb.add(InlineKeyboardButton("Назад", callback_data="profile"))
+    kb.add(InlineKeyboardButton(
+        f"{E_GIFT} Забрать чек в CryptoBot",
+        url=check_url
+    ))
+    kb.add(InlineKeyboardButton(
+        f"{E_BACK} Назад",
+        callback_data="profile"
+    ))
     return kb
 
 
 def _kb_back_profile() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("Назад", callback_data="profile"))
+    kb.add(InlineKeyboardButton(
+        f"{E_BACK} Вернуться в профиль",
+        callback_data="profile"
+    ))
     return kb
 
 
@@ -172,11 +213,11 @@ def _kb_back_profile() -> InlineKeyboardMarkup:
 
 def _t_deposit_ask() -> str:
     return (
-        f"💳 <b>Пополнение баланса</b>\n"
+        f"{E_WALLET} <b>Пополнение баланса</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Введите сумму пополнения в <b>{DEFAULT_ASSET}</b>:\n\n"
-        f"• Минимум: <b>${DEPOSIT_MIN:,.2f}</b>\n"
-        f"• Максимум: <b>${DEPOSIT_MAX:,.0f}</b>\n\n"
+        f"{E_MONEY} Введите сумму в <b>{DEFAULT_ASSET}</b>:\n\n"
+        f"{E_BOLT} Минимум: <b>${DEPOSIT_MIN:,.2f}</b>\n"
+        f"{E_STAR} Максимум: <b>${DEPOSIT_MAX:,.0f}</b>\n\n"
         f"✏️ Напишите сумму в чат.\n"
         f"Пример: <code>10</code> или <code>0.50</code>"
     )
@@ -184,40 +225,41 @@ def _t_deposit_ask() -> str:
 
 def _t_deposit_invoice(amount: float) -> str:
     return (
-        f"💳 <b>Счёт создан!</b>\n"
+        f"{E_WALLET} <b>Счёт создан!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
-        f"⏳ Срок действия: <b>5 минут</b>\n\n"
-        f"Нажмите кнопку ниже и оплатите счёт через @CryptoBot.\n"
+        f"{E_MONEY} Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
+        f"{E_CLOCK} Срок действия: <b>5 минут</b>\n\n"
+        f"{E_BOLT} Нажмите кнопку ниже и оплатите через @CryptoBot.\n"
         f"После оплаты баланс зачислится <b>автоматически</b> за {POLL_INTERVAL} сек."
     )
 
 
 def _t_deposit_success(amount: float, new_balance: float) -> str:
     return (
-        f"✅ <b>Пополнение прошло!</b>\n"
+        f"{E_FIRE} <b>Пополнение прошло успешно!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n"
-        f"💎 Ваш баланс: <b>${new_balance:,.2f}</b>"
+        f"{E_MONEY} Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n"
+        f"{E_DIAMOND} Ваш баланс: <b>${new_balance:,.2f}</b>"
     )
 
 
 def _t_deposit_expired() -> str:
     return (
-        f"⌛ <b>Счёт истёк!</b>\n"
+        f"{E_WARNING} <b>Счёт истёк!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Время оплаты (5 мин) вышло. Создайте новый счёт."
+        f"{E_CLOCK} Время оплаты (5 мин) вышло.\n"
+        f"Создайте новый счёт и попробуйте снова."
     )
 
 
 def _t_withdraw_ask(balance: float) -> str:
     return (
-        f"📤 <b>Вывод средств</b>\n"
+        f"{E_SEND} <b>Вывод средств</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💎 Ваш баланс: <b>${balance:,.2f}</b>\n\n"
-        f"Введите сумму вывода в <b>{DEFAULT_ASSET}</b>:\n\n"
-        f"• Минимум: <b>${WITHDRAW_MIN:,.2f}</b>\n"
-        f"• Максимум: <b>${WITHDRAW_MAX:,.0f}</b>\n\n"
+        f"{E_DIAMOND} Ваш баланс: <b>${balance:,.2f}</b>\n\n"
+        f"{E_PAY} Введите сумму вывода в <b>{DEFAULT_ASSET}</b>:\n\n"
+        f"{E_BOLT} Минимум: <b>${WITHDRAW_MIN:,.2f}</b>\n"
+        f"{E_STAR} Максимум: <b>${WITHDRAW_MAX:,.0f}</b>\n\n"
         f"✏️ Напишите сумму в чат.\n"
         f"Пример: <code>10</code> или <code>0.50</code>"
     )
@@ -225,19 +267,20 @@ def _t_withdraw_ask(balance: float) -> str:
 
 def _t_withdraw_done(amount: float) -> str:
     return (
-        f"✅ <b>Чек создан!</b>\n"
+        f"{E_FIRE} <b>Чек успешно создан!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💸 Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n\n"
-        f"Нажмите кнопку ниже чтобы активировать чек в @CryptoBot.\n"
+        f"{E_PAY} Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n\n"
+        f"{E_LOCK} Нажмите кнопку ниже, чтобы активировать чек в @CryptoBot.\n"
         f"<i>Чек одноразовый — не передавайте ссылку третьим лицам.</i>"
     )
 
 
 def _t_withdraw_failed() -> str:
     return (
-        f"❌ <b>Ошибка вывода!</b>\n"
+        f"{E_CROSS} <b>Ошибка вывода!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Не удалось создать чек. Средства возвращены на баланс.\n"
+        f"{E_WARNING} Не удалось создать чек.\n"
+        f"{E_MONEY} Средства возвращены на баланс.\n"
         f"Попробуйте позже или обратитесь в поддержку."
     )
 
@@ -406,7 +449,7 @@ def register(bot: telebot.TeleBot):
         except ValueError:
             _edit(
                 bot, chat_id, message_id,
-                (f"❌ Введите число. Например: <code>10</code>\n\n"
+                (f"{E_CROSS} Введите корректное число. Например: <code>10</code>\n\n"
                  + (_t_deposit_ask() if step == "deposit_amount"
                     else _t_withdraw_ask(db.get_balance(uid)))),
                 _kb_cancel_input(),
@@ -419,14 +462,15 @@ def register(bot: telebot.TeleBot):
             if not (DEPOSIT_MIN <= amount <= DEPOSIT_MAX):
                 _edit(
                     bot, chat_id, message_id,
-                    (f"❌ Сумма: от <b>${DEPOSIT_MIN:,.2f}</b> "
+                    (f"{E_WARNING} Сумма: от <b>${DEPOSIT_MIN:,.2f}</b> "
                      f"до <b>${DEPOSIT_MAX:,.0f}</b>.\n\n"
                      + _t_deposit_ask()),
                     _kb_cancel_input(),
                 )
                 return
 
-            _edit(bot, chat_id, message_id, "⏳ <b>Создаём счёт...</b>", None)
+            _edit(bot, chat_id, message_id,
+                  f"{E_CLOCK} <b>Создаём счёт...</b>", None)
 
             inv = client.create_invoice(
                 asset=DEFAULT_ASSET,
@@ -438,7 +482,7 @@ def register(bot: telebot.TeleBot):
 
             if not inv:
                 _edit(bot, chat_id, message_id,
-                      "❌ Ошибка создания счёта. Попробуйте позже.",
+                      f"{E_CROSS} Ошибка создания счёта. Попробуйте позже.",
                       _kb_back_profile())
                 _clear_state(uid)
                 return
@@ -449,7 +493,7 @@ def register(bot: telebot.TeleBot):
             dep_id = db.deposit_create(uid, invoice_id, amount, DEFAULT_ASSET)
             if dep_id is None:
                 _edit(bot, chat_id, message_id,
-                      "❌ Дублирующийся счёт. Обратитесь в поддержку.",
+                      f"{E_CROSS} Дублирующийся счёт. Обратитесь в поддержку.",
                       _kb_back_profile())
                 _clear_state(uid)
                 return
@@ -483,7 +527,7 @@ def register(bot: telebot.TeleBot):
             if not (WITHDRAW_MIN <= amount <= WITHDRAW_MAX):
                 _edit(
                     bot, chat_id, message_id,
-                    (f"❌ Сумма: от <b>${WITHDRAW_MIN:,.2f}</b> "
+                    (f"{E_WARNING} Сумма: от <b>${WITHDRAW_MIN:,.2f}</b> "
                      f"до <b>${WITHDRAW_MAX:,.0f}</b>.\n\n"
                      + _t_withdraw_ask(balance)),
                     _kb_cancel_input(),
@@ -493,8 +537,8 @@ def register(bot: telebot.TeleBot):
             if balance < amount:
                 _edit(
                     bot, chat_id, message_id,
-                    (f"❌ Недостаточно средств!\n"
-                     f"💎 Баланс: <b>${balance:,.2f}</b>\n\n"
+                    (f"{E_CROSS} Недостаточно средств!\n"
+                     f"{E_DIAMOND} Баланс: <b>${balance:,.2f}</b>\n\n"
                      + _t_withdraw_ask(balance)),
                     _kb_cancel_input(),
                 )
@@ -502,19 +546,20 @@ def register(bot: telebot.TeleBot):
 
             if db.withdrawal_has_pending(uid):
                 _edit(bot, chat_id, message_id,
-                      "⏳ Заявка уже в обработке. Подождите.",
+                      f"{E_CLOCK} Заявка уже в обработке. Подождите.",
                       _kb_back_profile())
                 _clear_state(uid)
                 return
 
             _clear_state(uid)
-            _edit(bot, chat_id, message_id, "⏳ <b>Создаём чек...</b>", None)
+            _edit(bot, chat_id, message_id,
+                  f"{E_CLOCK} <b>Создаём чек...</b>", None)
 
             # Атомарно: списать + создать заявку
             wid = db.withdrawal_create(uid, amount, DEFAULT_ASSET)
             if wid is None:
                 _edit(bot, chat_id, message_id,
-                      "❌ Недостаточно средств или ошибка базы данных.",
+                      f"{E_CROSS} Недостаточно средств или ошибка базы данных.",
                       _kb_back_profile())
                 return
 
