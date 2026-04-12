@@ -32,11 +32,7 @@ EMOJI_USERNAME   = "5258185631355378853"
 EMOJI_TURNOVER   = "5904462880941545555"
 EMOJI_DAYS       = "5258330865674494479"
 EMOJI_BALANCE    = "5258204546391351475"
-EMOJI_RANK       = "5904462880941545555"
 
-EMOJI_TOTAL_DEP  = "5904462880941545555"
-EMOJI_TOTAL_WITH = "5904462880941545555"
-EMOJI_PROFIT     = "5904462880941545555"
 EMOJI_FILTER_DAY = "5904462880941545555"
 EMOJI_FILTER_WEK = "5904462880941545555"
 EMOJI_FILTER_ALL = "5904462880941545555"
@@ -62,15 +58,17 @@ DICE_EMOJI = {
 }
 
 
-def btn(text: str, callback_data: str, emoji_id: str) -> InlineKeyboardButton:
+def btn(text: str, callback_data: str, emoji_id: str = "") -> InlineKeyboardButton:
     b = InlineKeyboardButton(text=text, callback_data=callback_data)
-    b.icon_custom_emoji_id = emoji_id
+    if emoji_id:
+        b.icon_custom_emoji_id = emoji_id
     return b
 
 
-def url_btn(text: str, url: str, emoji_id: str) -> InlineKeyboardButton:
+def url_btn(text: str, url: str, emoji_id: str = "") -> InlineKeyboardButton:
     b = InlineKeyboardButton(text=text, url=url)
-    b.icon_custom_emoji_id = emoji_id
+    if emoji_id:
+        b.icon_custom_emoji_id = emoji_id
     return b
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -91,19 +89,19 @@ def kb_main() -> InlineKeyboardMarkup:
     return m
 
 
-def kb_back() -> InlineKeyboardMarkup:
+def kb_back_main() -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
-    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
 def kb_profile() -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
     m.row(
-        btn("Пополнить", "deposit",  EMOJI_DEPOSIT),
-        btn("Вывести",   "withdraw", EMOJI_WITHDRAW),
+        btn("💳 Пополнить", "deposit",  EMOJI_DEPOSIT),
+        btn("📤 Вывести",   "withdraw", EMOJI_WITHDRAW),
     )
-    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
@@ -117,7 +115,7 @@ def kb_stats(active: str = "all") -> InlineKeyboardMarkup:
                        EMOJI_FILTER_DAY if key == "day" else
                        EMOJI_FILTER_WEK if key == "week" else EMOJI_FILTER_ALL))
     m.row(*row)
-    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
@@ -128,25 +126,25 @@ def kb_about() -> InlineKeyboardMarkup:
         url_btn("Поддержка", "https://t.me/yoursupport", EMOJI_SUPPORT),
     )
     m.row(url_btn("Новости", "https://t.me/yournews", EMOJI_NEWS))
-    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
 def kb_active_games(games: list) -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
     for g in games:
-        e = DICE_EMOJI.get(g["game_type"], "🎲")
+        e    = DICE_EMOJI.get(g["game_type"], "🎲")
         mode = "очки" if g["mode"] == "x" else "сумма"
         label = f"{e} ${g['bet']:,.2f} | {g['rounds']}р {mode}"
         m.row(InlineKeyboardButton(text=label, callback_data=f"duel_view:{g['id']}"))
-    m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
+    m.row(btn("◀️ Главное меню", "main_menu", EMOJI_BACK))
     return m
 
 
 def kb_duel_view(game_id: int) -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
     m.row(InlineKeyboardButton(text="➕ Присоединиться", callback_data=f"duel_join:{game_id}"))
-    m.row(btn("Назад", "active_games", EMOJI_BACK))
+    m.row(btn("◀️ Назад", "active_games", EMOJI_BACK))
     return m
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -216,18 +214,21 @@ def text_active_games(games: list) -> str:
         return (
             f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━━\n'
-            f'<tg-emoji emoji-id="6030776052345737530">⚔️</tg-emoji>Пусто.\n'
+            f'Пусто — нет открытых дуэлей.\n'
         )
     return (
         f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>  ({len(games)} шт.)\n'
+        f'━━━━━━━━━━━━━━━━━━━━━\n'
+        f'Выбери дуэль чтобы присоединиться:'
     )
 
 
 def text_duel_view(g) -> str:
     e = DICE_EMOJI.get(g["game_type"], "🎲")
-    mode_lbl = f"до {g['win_score']} очков" if g["mode"] == "x" else f"{g['rounds']} бросков • сумма"
+    mode_lbl = (f"до {g['win_score']} очков" if g["mode"] == "x"
+                else f"{g['rounds']} бросков • сумма")
     p1_row  = db.get_user_row(g["p1_uid"])
-    p1_un   = p1_row["username"] if p1_row and p1_row["username"] else ""
+    p1_un   = p1_row["username"]   if p1_row and p1_row["username"]   else ""
     p1_name = p1_row["first_name"] if p1_row and p1_row["first_name"] else str(g["p1_uid"])
     p1_d    = f"@{p1_un}" if p1_un else p1_name
     return (
@@ -245,11 +246,8 @@ def text_duel_view(g) -> str:
 #  ADMIN — /add  /sub
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _resolve_target(message, target_raw: str):
-    """
-    Возвращает (uid, None) при успехе или (None, error_text) при ошибке.
-    Работает и с @username и с числовым ID.
-    """
+def _resolve_target(target_raw: str):
+    """Возвращает (uid, None) или (None, error_text)."""
     if target_raw.startswith("@"):
         uid = db.resolve_username(target_raw[1:])
         if uid is None:
@@ -270,13 +268,13 @@ def cmd_add(message):
     if message.from_user.id not in ADMINS:
         bot.reply_to(message, "❌ Нет доступа.")
         return
+
     parts = message.text.strip().split()
     if len(parts) != 3:
         bot.reply_to(
             message,
-            "❌ Неверный формат.\n"
-            "Используй: <code>/add @username 500</code>\n"
-            "или: <code>/add 123456789 500</code>",
+            "❌ Формат: <code>/add @username 500</code>\n"
+            "или:      <code>/add 123456789 500</code>",
         )
         return
 
@@ -290,7 +288,7 @@ def cmd_add(message):
         bot.reply_to(message, "❌ Сумма должна быть положительным числом.")
         return
 
-    target_id, err = _resolve_target(message, target_raw)
+    target_id, err = _resolve_target(target_raw)
     if err:
         bot.reply_to(message, err)
         return
@@ -307,7 +305,6 @@ def cmd_add(message):
         f'💰 Начислено: <b>+${amount:,.2f}</b>\n'
         f'💎 Новый баланс: <b>${new_balance:,.2f}</b>',
     )
-
     try:
         bot.send_message(
             target_id,
@@ -319,17 +316,13 @@ def cmd_add(message):
     except Exception:
         bot.send_message(
             message.chat.id,
-            f'⚠️ Пользователь <code>{target_id}</code> не запускал бота — уведомление не отправлено.',
+            f'⚠️ Пользователь <code>{target_id}</code> не запускал бота — '
+            f'уведомление не отправлено.',
         )
 
 
 @bot.message_handler(commands=["sub"])
 def cmd_sub(message):
-    """
-    /sub @username 500  или  /sub 123456789 500
-    Снимает указанную сумму с баланса пользователя.
-    Если баланс меньше — снимает до нуля и сообщает реально снятое.
-    """
     if message.from_user.id not in ADMINS:
         bot.reply_to(message, "❌ Нет доступа.")
         return
@@ -338,9 +331,8 @@ def cmd_sub(message):
     if len(parts) != 3:
         bot.reply_to(
             message,
-            "❌ Неверный формат.\n"
-            "Используй: <code>/sub @username 500</code>\n"
-            "или: <code>/sub 123456789 500</code>",
+            "❌ Формат: <code>/sub @username 500</code>\n"
+            "или:      <code>/sub 123456789 500</code>",
         )
         return
 
@@ -354,32 +346,29 @@ def cmd_sub(message):
         bot.reply_to(message, "❌ Сумма должна быть положительным числом.")
         return
 
-    target_id, err = _resolve_target(message, target_raw)
+    target_id, err = _resolve_target(target_raw)
     if err:
         bot.reply_to(message, err)
         return
 
     db.ensure_user(target_id)
-
-    current_balance = db.get_balance(target_id)
-
-    # Снимаем не больше чем есть на балансе
-    actually_sub = min(amount, current_balance)
+    current = db.get_balance(target_id)
+    actually_sub = min(amount, current)
 
     if actually_sub <= 0:
         bot.reply_to(
             message,
-            f'❌ У пользователя <code>{target_id}</code> нулевой баланс. Нечего снимать.',
+            f'❌ У <code>{target_id}</code> нулевой баланс. Нечего снимать.',
         )
         return
 
     db.add_balance(target_id, -actually_sub)
     new_balance = db.get_balance(target_id)
 
-    # Предупреждаем если списали меньше запрошенного
     warn = ""
     if actually_sub < amount:
-        warn = f'\n⚠️ Баланс был меньше запрошенного — списано только <b>${actually_sub:,.2f}</b>'
+        warn = (f'\n⚠️ Баланс был меньше — '
+                f'списано только <b>${actually_sub:,.2f}</b>')
 
     bot.reply_to(
         message,
@@ -390,7 +379,6 @@ def cmd_sub(message):
         f'💎 Новый баланс: <b>${new_balance:,.2f}</b>'
         f'{warn}',
     )
-
     try:
         bot.send_message(
             target_id,
@@ -402,7 +390,8 @@ def cmd_sub(message):
     except Exception:
         bot.send_message(
             message.chat.id,
-            f'⚠️ Пользователь <code>{target_id}</code> не запускал бота — уведомление не отправлено.',
+            f'⚠️ Пользователь <code>{target_id}</code> не запускал бота — '
+            f'уведомление не отправлено.',
         )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -414,7 +403,7 @@ WELCOME_TEXT = (
     '<b>Добро пожаловать, стрелок.</b>\n\n'
     '<b><tg-emoji emoji-id="5258185631355378853">👤</tg-emoji>'
     'Здесь слова имеют вес только если подкреплены звоном монет. '
-    'Хочешь доказать, что ты лучший?</b> \n'
+    'Хочешь доказать, что ты лучший?</b>\n'
     '<b><tg-emoji emoji-id="6039496266180726678">👤</tg-emoji>'
     'Приготовь свой кошелек и хладнокровие!</b>'
 )
@@ -426,16 +415,18 @@ def start_handler(message):
     db.ensure_user(
         uid,
         message.from_user.username or "",
-        (f"{message.from_user.first_name or ''} {message.from_user.last_name or ''}").strip(),
+        (f"{message.from_user.first_name or ''} "
+         f"{message.from_user.last_name or ''}").strip(),
     )
     bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=kb_main())
 
 
-@bot.callback_query_handler(func=lambda call: not (
-    call.data.startswith("duel_join:")
-    or call.data.startswith("duel_cancel:")
-    or call.data == "pay_cancel"           # обрабатывается в payments.py
-))
+# ── Главный callback_handler ─────────────────────────────────────────────────
+# Исключаем колбэки которые обрабатываются в duels.py и payments.py
+
+@bot.callback_query_handler(func=lambda call: call.data not in ("pay_cancel",)
+    and not call.data.startswith("duel_join:")
+    and not call.data.startswith("duel_cancel:"))
 def callback_handler(call):
     chat_id = call.message.chat.id
     msg_id  = call.message.message_id
@@ -459,6 +450,10 @@ def callback_handler(call):
             )
         except Exception:
             pass
+
+    bot.answer_callback_query(call.id)
+
+    # ── Навигация ──────────────────────────────────────────────────────────
 
     if data == "main_menu":
         edit(WELCOME_TEXT, kb_main())
@@ -485,7 +480,7 @@ def callback_handler(call):
             edit(text_duel_view(g), kb_duel_view(game_id))
 
     elif data == "referrals":
-        edit(text_referrals(user), kb_back())
+        edit(text_referrals(user), kb_back_main())
 
     elif data in ("statistics", "stats_all"):
         edit(text_stats("all"), kb_stats("all"))
@@ -499,109 +494,13 @@ def callback_handler(call):
     elif data == "about":
         edit(text_about(), kb_about())
 
-    # ── Кнопки Пополнить / Вывести перенаправляют в ЛС ──────────────────
-
+    # ── Пополнение — редактируем это же сообщение ─────────────────────────
     elif data == "deposit":
-        uid = user.id
-        if call.message.chat.type != "private":
-            # Отправляем пользователю ссылку на ЛС бота
-            bot_info = bot.get_me()
-            kb = InlineKeyboardMarkup()
-            kb.add(InlineKeyboardButton(
-                "💳 Перейти к пополнению",
-                url=f"https://t.me/{bot_info.username}?start=deposit",
-            ))
-            try:
-                bot.answer_callback_query(call.id)
-                bot.send_message(
-                    uid,
-                    "💳 Нажмите кнопку ниже чтобы перейти к пополнению в ЛС бота:",
-                    reply_markup=kb,
-                )
-            except Exception:
-                bot.answer_callback_query(
-                    call.id,
-                    "Напишите боту в личные сообщения: /deposit",
-                    show_alert=True,
-                )
-            return
-        else:
-            # Уже в ЛС — запускаем напрямую
-            payments._set_state(uid, "deposit_amount")
-            bot.answer_callback_query(call.id)
-            bot.send_message(
-                uid,
-                payments._t_deposit_ask(),
-                parse_mode="HTML",
-                reply_markup=payments._kb_cancel(),
-            )
-            return
+        payments.open_deposit(bot, user.id, chat_id, msg_id)
 
+    # ── Вывод — редактируем это же сообщение ──────────────────────────────
     elif data == "withdraw":
-        uid = user.id
-        if call.message.chat.type != "private":
-            bot_info = bot.get_me()
-            kb = InlineKeyboardMarkup()
-            kb.add(InlineKeyboardButton(
-                "📤 Перейти к выводу",
-                url=f"https://t.me/{bot_info.username}?start=withdraw",
-            ))
-            try:
-                bot.answer_callback_query(call.id)
-                bot.send_message(
-                    uid,
-                    "📤 Нажмите кнопку ниже чтобы перейти к выводу в ЛС бота:",
-                    reply_markup=kb,
-                )
-            except Exception:
-                bot.answer_callback_query(
-                    call.id,
-                    "Напишите боту в личные сообщения: /withdraw",
-                    show_alert=True,
-                )
-            return
-        else:
-            balance = db.get_balance(uid)
-            payments._set_state(uid, "withdraw_amount")
-            bot.answer_callback_query(call.id)
-            bot.send_message(
-                uid,
-                payments._t_withdraw_ask(balance),
-                parse_mode="HTML",
-                reply_markup=payments._kb_cancel(),
-            )
-            return
-
-    bot.answer_callback_query(call.id)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  /start с параметром (deep link) — для редиректа из группы
-# ══════════════════════════════════════════════════════════════════════════════
-
-@bot.message_handler(commands=["start"])
-def start_with_param(message):
-    uid  = message.from_user.id
-    text = message.text.strip()
-    db.ensure_user(
-        uid,
-        message.from_user.username or "",
-        (f"{message.from_user.first_name or ''} {message.from_user.last_name or ''}").strip(),
-    )
-
-    if "deposit" in text and message.chat.type == "private":
-        payments._set_state(uid, "deposit_amount")
-        bot.send_message(uid, payments._t_deposit_ask(), parse_mode="HTML",
-                         reply_markup=payments._kb_cancel())
-        return
-    if "withdraw" in text and message.chat.type == "private":
-        balance = db.get_balance(uid)
-        payments._set_state(uid, "withdraw_amount")
-        bot.send_message(uid, payments._t_withdraw_ask(balance), parse_mode="HTML",
-                         reply_markup=payments._kb_cancel())
-        return
-
-    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=kb_main())
+        payments.open_withdraw(bot, user.id, chat_id, msg_id)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -617,7 +516,7 @@ if __name__ == "__main__":
 
     db.init_db()
     duels.register(bot)
-    payments.register(bot)   # ← регистрирует хендлеры + запускает фоновый поллинг
+    payments.register(bot)
 
     print("Бот запущен...")
     bot.infinity_polling(skip_pending=True)
