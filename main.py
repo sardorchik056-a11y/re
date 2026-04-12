@@ -377,7 +377,6 @@ def start_handler(message):
     bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=kb_main())
 
 
-# ── ИСПРАВЛЕНИЕ: убран duel_view: из исключений — теперь он обрабатывается здесь ──
 @bot.callback_query_handler(func=lambda call: not (
     call.data.startswith("duel_join:") or call.data.startswith("duel_cancel:")
 ))
