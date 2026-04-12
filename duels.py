@@ -1,9 +1,9 @@
 """
-duels.py — модуль дуэлей (группа + личка, без таймаута, без БД)
+duels.py — модуль дуэлей (SQLite, защита от дублей, без таймаута)
 
-Команды:
-  /cubx<N> <сумма>        🎲 до N очков (у кого больше — очко)
-  /cubtotal<N> <сумма>    🎲 N бросков, побеждает сумма
+Режимы и команды:
+  /cubx<N> <сумма>        🎲 до N очков
+  /cubtotal<N> <сумма>    🎲 N бросков, побеждает сумма  (N ≥ 2)
   /dartx<N> <сумма>       🎯
   /darttotal<N> <сумма>   🎯
   /basketx<N> <сумма>     🏀
@@ -13,21 +13,30 @@ duels.py — модуль дуэлей (группа + личка, без тай
   /footx<N> <сумма>       ⚽
   /foottotal<N> <сумма>   ⚽
 
-  N = 2..5
-  /cancelduel — отмена (только создатель)
+  Ставка: 0.10 $ .. 10 000 $
+  N = 2..5 для x-режима, 2..5 для total-режима
+
+  /del          — удалить свою lobby-дуэль (реплаем на сообщение дуэли)
+  /delall       — удалить все свои lobby-дуэли без соперника
+  /myg | /mygames — список своих активных дуэлей
+  /cancelduel   — отмена активной дуэли в чате (только создатель)
 """
 
 import re
 import threading
-from dataclasses import dataclass, field
 from typing import Optional
 
 import telebot
 from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
+import database as db
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  КОНФИГ
 # ══════════════════════════════════════════════════════════════════════════════
+
+BET_MIN = 0.10
+BET_MAX = 10_000.0
 
 DICE_EMOJI = {
     "cub":    "🎲",
@@ -37,66 +46,18 @@ DICE_EMOJI = {
     "foot":   "⚽",
 }
 
+# Эмодзи → тип игры (для фильтрации входящих dice)
+EMOJI_TO_TYPE = {v: k for k, v in DICE_EMOJI.items()}
+
 CMD_RE = re.compile(
     r"^/(cub|dart|basket|bowl|foot)(x|total)([2-5])(?:@\w+)?$",
     re.IGNORECASE,
 )
 
-# Кастомный премиум эмодзи — человечек перед именем игрока
 PLAYER_ICON = '<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji>'
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  СТРУКТУРЫ
-# ══════════════════════════════════════════════════════════════════════════════
-
-@dataclass
-class Player:
-    uid:      int
-    name:     str
-    username: str
-    scores:   list = field(default_factory=list)
-    points:   int  = 0
-
-    @property
-    def display(self) -> str:
-        return f"@{self.username}" if self.username else self.name
-
-
-@dataclass
-class Game:
-    chat_id:           int
-    game_type:         str
-    mode:              str
-    rounds:            int       # для total-режима — кол-во бросков каждого
-    win_score:         int       # для x-режима — сколько очков нужно победить (= N из команды)
-    bet:               float
-    player1:           Player
-    player2:           Optional[Player] = None
-    lobby_msg:         int = 0
-    game_msg:          int = 0
-    # lobby | playing | finished
-    state:             str = "lobby"
-    # x-режим: броски текущего раунда (None = ещё не бросил)
-    p1_round_val:      Optional[int] = None
-    p2_round_val:      Optional[int] = None
-    # Комментарий итога последнего раунда
-    last_round_result: str = ""
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  ХРАНИЛИЩЕ
-# ══════════════════════════════════════════════════════════════════════════════
-
-_lock:  threading.Lock  = threading.Lock()
-_games: dict[int, Game] = {}
-
-def _get(chat_id: int) -> Optional[Game]:
-    return _games.get(chat_id)
-
-def _set(game: Game):
-    _games[game.chat_id] = game
-
-def _del(chat_id: int):
-    _games.pop(chat_id, None)
+# Глобальный замок для операций с играми (предотвращает race condition)
+_lock = threading.Lock()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  УТИЛИТЫ
@@ -111,128 +72,134 @@ def _parse_cmd(text: str):
         return None
     return m.group(1).lower(), m.group(2).lower(), int(m.group(3))
 
+
 def _get_bet(text: str) -> Optional[float]:
     parts = (text or "").split()
     if len(parts) < 2:
         return None
     try:
-        v = float(parts[1].replace(",", "."))
-        return v if v > 0 else None
+        v = round(float(parts[1].replace(",", ".")), 2)
+        if BET_MIN <= v <= BET_MAX:
+            return v
+        return None
     except ValueError:
         return None
+
 
 def _fmt_name(u) -> str:
     return (f"{u.first_name or ''} {u.last_name or ''}".strip()) or str(u.id)
 
+
+def _display(uid: int, name: str, username: str) -> str:
+    return f"@{username}" if username else name
+
+
 def _score_bar(pts: int, win_score: int) -> str:
-    """Полоска прогресса — зелёные кружки до win_score."""
     return "🟢" * pts + "⚪" * (win_score - pts)
 
-def _kb_lobby() -> InlineKeyboardMarkup:
+
+def _kb_lobby(game_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("➕Присоедениться", callback_data="duel_join"))
+    kb.add(InlineKeyboardButton("➕ Присоединиться", callback_data=f"duel_join:{game_id}"))
     return kb
 
-def _kb_cancel() -> InlineKeyboardMarkup:
+
+def _kb_cancel_lobby(game_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("❌Отменить", callback_data="duel_cancel"))
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data=f"duel_cancel:{game_id}"))
     return kb
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ТЕКСТЫ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _t_lobby(g: Game) -> str:
-    e = DICE_EMOJI[g.game_type]
-    mode_lbl = f"до {g.win_score} очков" if g.mode == "x" else f"{g.rounds} бросков • сумма"
+def _t_lobby(g, p1_display: str) -> str:
+    e = DICE_EMOJI[g["game_type"]]
+    if g["mode"] == "x":
+        mode_lbl = f"до {g['win_score']} очков"
+    else:
+        mode_lbl = f"{g['rounds']} бросков • сумма"
     return (
         f"{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Игрок:  <b>{g.player1.display}</b>\n'
-        f'<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:     <b>${g.bet:,.2f}</b>\n'
-        f" <b>{mode_lbl}</b>\n"
+        f"{PLAYER_ICON} Игрок:  <b>{p1_display}</b>\n"
+        f"{PLAYER_ICON} Ставка: <b>${g['bet']:,.2f}</b>\n"
+        f"  <b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Нажми кнопку ниже чтобы присоедениться!</b>"
+        f"<b>Нажми кнопку ниже чтобы присоединиться!</b>"
     )
 
 
-def _t_x(g: Game) -> str:
-    """
-    Очковый режим: оба бросают в любом порядке.
-    Раунд завершается когда оба бросили — сравниваем значения.
-    Показывает итог предыдущего раунда (ничья / кто выиграл бросок).
-    """
-    e = DICE_EMOJI[g.game_type]
-    p1, p2 = g.player1, g.player2
-    rnd = len(p1.scores) + 1
-    ico = PLAYER_ICON
+def _t_x(g, p1_display: str, p2_display: str,
+          p1_pts: int, p2_pts: int,
+          p1_round_val, p2_round_val,
+          last_round_result: str, rnd: int) -> str:
+    e = DICE_EMOJI[g["game_type"]]
+    ws = g["win_score"]
 
     def status(val):
         if val is not None:
             return f"✅ бросил <b>{val}</b>"
         return "⏳ ждём броска"
 
-    # Блок с комментарием прошлого раунда (пустой в первом раунде)
-    result_line = f"\n💬 {g.last_round_result}\n\n" if g.last_round_result else "\n"
-
+    result_line = f"\n💬 {last_round_result}\n\n" if last_round_result else "\n"
     return (
-        f"{e} <b>Раунд {rnd}  |  до {g.win_score} очков!</b>\n"
+        f"{e} <b>Раунд {rnd}  |  до {ws} очков!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{ico} {p1.display}  {_score_bar(p1.points, g.win_score)}  {status(g.p1_round_val)}\n"
-        f"{ico} {p2.display}  {_score_bar(p2.points, g.win_score)}  {status(g.p2_round_val)}\n"
+        f"{PLAYER_ICON} {p1_display}  {_score_bar(p1_pts, ws)}  {status(p1_round_val)}\n"
+        f"{PLAYER_ICON} {p2_display}  {_score_bar(p2_pts, ws)}  {status(p2_round_val)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━"
         f"{result_line}"
         f"Отправьте {e} — в ответ на это сообщение!"
     )
 
 
-def _t_total(g: Game) -> str:
-    """
-    Суммарный режим: каждый бросает N раз в любом порядке, без очереди.
-    Каждый игрок сам решает когда бросить — хоть все N сразу.
-    """
-    e = DICE_EMOJI[g.game_type]
-    p1, p2 = g.player1, g.player2
-    s1, s2 = sum(p1.scores), sum(p2.scores)
-    ico = PLAYER_ICON
+def _t_total(g, p1_display: str, p2_display: str,
+             p1_scores: list, p2_scores: list) -> str:
+    e = DICE_EMOJI[g["game_type"]]
+    rounds = g["rounds"]
 
-    def row(p: Player, s: int) -> str:
-        vals = " + ".join(str(v) for v in p.scores) if p.scores else "—"
-        done = len(p.scores)
-        done_mark = " ✅" if done == g.rounds else f"  {done}/{g.rounds}"
-        return f"{vals}  =  <b>{s}</b>{done_mark}"
+    def row(p_display: str, scores: list) -> str:
+        vals = " + ".join(str(v) for v in scores) if scores else "—"
+        s = sum(scores)
+        done = len(scores)
+        mark = " ✅" if done == rounds else f"  {done}/{rounds}"
+        return f"{PLAYER_ICON} {p_display}:  {vals}  =  <b>{s}</b>{mark}"
 
     return (
-        f"{e} <b>Сумма  |  {g.rounds} броска</b>\n"
+        f"{e} <b>Сумма  |  {rounds} броска</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{ico} {p1.display}:  {row(p1, s1)}\n"
-        f"{ico} {p2.display}:  {row(p2, s2)}\n"
+        f"{row(p1_display, p1_scores)}\n"
+        f"{row(p2_display, p2_scores)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Отправьте {e} — в ответ на это сообщение!"
     )
 
 
-def _t_finish(g: Game, winner: Optional[Player], draw=False) -> str:
-    e = DICE_EMOJI[g.game_type]
-    p1, p2 = g.player1, g.player2
-    ico = PLAYER_ICON
+def _t_finish(g, winner_display: Optional[str],
+              p1_display: str, p2_display: str,
+              p1_scores: list, p2_scores: list,
+              p1_pts: int, p2_pts: int,
+              draw=False) -> str:
+    e = DICE_EMOJI[g["game_type"]]
     if draw:
         result = "🤝 <b>Ничья!</b> Ставки возвращаются."
     else:
-        result = f'<tg-emoji emoji-id="5461151367559141950">👤</tg-emoji> Победитель: <b>{winner.display}</b>!\n<tg-emoji emoji-id="5890848474563352982">👤</tg-emoji> Выигрыш: <b>${g.bet * 2:,.2f}</b>'
-    if g.mode == "x":
+        result = (
+            f'🏆 Победитель: <b>{winner_display}</b>!\n'
+            f'💰 Выигрыш: <b>${g["bet"] * 2:,.2f}</b>'
+        )
+    if g["mode"] == "x":
         detail = (
-            f"{ico} {p1.display}: {p1.points} очк.\n"
-            f"{ico} {p2.display}: {p2.points} очк."
+            f"{PLAYER_ICON} {p1_display}: {p1_pts} очк.\n"
+            f"{PLAYER_ICON} {p2_display}: {p2_pts} очк."
         )
     else:
-        s1 = sum(p1.scores)
-        s2 = sum(p2.scores)
-        def row(p, s):
-            return " + ".join(str(v) for v in p.scores) + f" = <b>{s}</b>"
+        def row(p_d, scores):
+            return " + ".join(str(v) for v in scores) + f" = <b>{sum(scores)}</b>"
         detail = (
-            f"{ico} {p1.display}: {row(p1, s1)}\n"
-            f"{ico} {p2.display}: {row(p2, s2)}"
+            f"{PLAYER_ICON} {p1_display}: {row(p1_display, p1_scores)}\n"
+            f"{PLAYER_ICON} {p2_display}: {row(p2_display, p2_scores)}"
         )
     return (
         f"{e} <b>Игра окончена!</b>\n"
@@ -241,6 +208,22 @@ def _t_finish(g: Game, winner: Optional[Player], draw=False) -> str:
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{result}"
     )
+
+
+def _t_my_games(games: list) -> str:
+    if not games:
+        return "📋 <b>Активных дуэлей нет.</b>"
+    lines = ["📋 <b>Твои активные дуэли:</b>\n━━━━━━━━━━━━━━━━━━━━━"]
+    for g in games:
+        e = DICE_EMOJI.get(g["game_type"], "🎲")
+        mode = "до очков" if g["mode"] == "x" else "сумма"
+        state = "👥 lobby" if g["state"] == "lobby" else "⚔️ играем"
+        lines.append(
+            f"{e} ID:{g['id']}  ${g['bet']:,.2f}  {g['rounds']}р/{mode}  {state}"
+        )
+    lines.append("━━━━━━━━━━━━━━━━━━━━━")
+    return "\n".join(lines)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ФИЛЬТРЫ
@@ -253,17 +236,21 @@ def is_duel_command(m: Message) -> bool:
 def is_duel_dice(m: Message) -> bool:
     if not m.dice:
         return False
-    g = _games.get(m.chat.id)
-    if not g or g.state != "playing" or not g.player2:
+    if not m.reply_to_message:
         return False
-    if m.dice.emoji != DICE_EMOJI.get(g.game_type):
+    gtype = EMOJI_TO_TYPE.get(m.dice.emoji)
+    if gtype is None:
         return False
-    if not m.reply_to_message or m.reply_to_message.message_id != g.game_msg:
+    # Проверяем что есть активная игра в этом чате
+    games = db.game_get_by_chat(m.chat.id)
+    playing = [g for g in games if g["state"] == "playing"
+               and g["game_msg"] == m.reply_to_message.message_id
+               and g["game_type"] == gtype]
+    if not playing:
         return False
+    g = playing[0]
     uid = m.from_user.id
-    if uid not in (g.player1.uid, g.player2.uid):
-        return False
-    return True
+    return uid in (g["p1_uid"], g["p2_uid"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  РЕГИСТРАЦИЯ
@@ -271,117 +258,207 @@ def is_duel_dice(m: Message) -> bool:
 
 def register(bot: telebot.TeleBot):
 
+    # ── вспомогательные ────────────────────────────────────────────────────
+
     def safe_del(chat_id: int, msg_id: int):
+        if not msg_id:
+            return
         try:
             bot.delete_message(chat_id, msg_id)
         except Exception:
             pass
 
-    def edit_game(g: Game, text: str):
+    def edit_game_msg(chat_id: int, msg_id: int, text: str):
         try:
             bot.edit_message_text(
-                chat_id=g.chat_id,
-                message_id=g.game_msg,
-                text=text,
-                parse_mode="HTML",
+                chat_id=chat_id, message_id=msg_id,
+                text=text, parse_mode="HTML",
             )
         except Exception:
             pass
 
-    def end_game(g: Game, winner: Optional[Player] = None, draw=False):
-        g.state = "finished"
-        safe_del(g.chat_id, g.game_msg)
-        bot.send_message(g.chat_id, _t_finish(g, winner, draw), parse_mode="HTML")
-        _del(g.chat_id)
+    def _load_displays(g) -> tuple:
+        """Возвращает (p1_display, p2_display)."""
+        p1_un = db.get_username_by_uid(g["p1_uid"]) or ""
+        p1_row = db.get_user_row(g["p1_uid"])
+        p1_name = p1_row["first_name"] if p1_row else str(g["p1_uid"])
+        p1_d = f"@{p1_un}" if p1_un else p1_name
 
-    # ──────────────────────────────────────────────────────────────────────
-    #  X-режим: оба бросают в любом порядке, раунд закрывается когда оба
-    #  бросили. После каждого раунда показывается итоговый комментарий.
-    #  Победа — первый кто набрал g.win_score очков (= N из команды)
-    # ──────────────────────────────────────────────────────────────────────
-
-    def _handle_x(g: Game, uid: int, val: int):
-        p1, p2 = g.player1, g.player2
-
-        if uid == p1.uid and g.p1_round_val is None:
-            g.p1_round_val = val
-        elif uid == p2.uid and g.p2_round_val is None:
-            g.p2_round_val = val
+        if g["p2_uid"]:
+            p2_un = db.get_username_by_uid(g["p2_uid"]) or ""
+            p2_row = db.get_user_row(g["p2_uid"])
+            p2_name = p2_row["first_name"] if p2_row else str(g["p2_uid"])
+            p2_d = f"@{p2_un}" if p2_un else p2_name
         else:
-            return  # уже бросил в этом раунде — игнор
+            p2_d = "?"
+        return p1_d, p2_d
 
-        # Оба бросили — завершаем раунд
-        if g.p1_round_val is not None and g.p2_round_val is not None:
-            v1, v2 = g.p1_round_val, g.p2_round_val
-            g.p1_round_val = None
-            g.p2_round_val = None
-            p1.scores.append(v1)
-            p2.scores.append(v2)
-            rnd_num = len(p1.scores)
+    def _end_game(g, winner_uid: Optional[int] = None, draw=False):
+        """Завершает игру: обновляет БД, баланс, отправляет итог."""
+        game_id = g["id"]
+        bet = g["bet"]
 
-            if v1 > v2:
-                p1.points += 1
-                g.last_round_result = (
-                    f"Раунд {rnd_num}: {p1.display} выиграл бросок "
-                    f"({v1} vs {v2}) — счёт {p1.points}:{p2.points}"
-                )
-            elif v2 > v1:
-                p2.points += 1
-                g.last_round_result = (
-                    f"Раунд {rnd_num}: {p2.display} выиграл бросок "
-                    f"({v2} vs {v1}) — счёт {p1.points}:{p2.points}"
-                )
-            else:
-                g.last_round_result = (
-                    f"Раунд {rnd_num}: ничья ({v1} = {v2}) — "
-                    f"счёт прежний {p1.points}:{p2.points}"
-                )
+        p1_uid = g["p1_uid"]
+        p2_uid = g["p2_uid"]
+        p1_scores = db.player_get_scores(game_id, p1_uid)
+        p2_scores = db.player_get_scores(game_id, p2_uid)
+        p1_pts = db.player_get_points(game_id, p1_uid)
+        p2_pts = db.player_get_points(game_id, p2_uid)
+        p1_d, p2_d = _load_displays(g)
 
-            if p1.points >= g.win_score:
-                end_game(g, winner=p1)
-            elif p2.points >= g.win_score:
-                end_game(g, winner=p2)
-            else:
-                safe_del(g.chat_id, g.game_msg)
-                sent = bot.send_message(g.chat_id, _t_x(g), parse_mode="HTML")
-                g.game_msg = sent.message_id
+        db.game_finish(game_id)
+        safe_del(g["chat_id"], g["game_msg"])
+
+        if draw:
+            # Возврат ставок
+            db.add_balance(p1_uid, bet)
+            db.add_balance(p2_uid, bet)
+            winner_d = None
         else:
-            edit_game(g, _t_x(g))
+            # Победитель получает общий банк
+            db.add_balance(winner_uid, bet * 2)
+            winner_d = p1_d if winner_uid == p1_uid else p2_d
 
-    # ──────────────────────────────────────────────────────────────────────
-    #  Total-режим: БЕЗ очереди — каждый бросает в любой момент, хоть все
-    #  N бросков подряд не дожидаясь соперника. Игра кончается когда оба
-    #  исчерпали все свои броски.
-    # ──────────────────────────────────────────────────────────────────────
+        db.add_turnover(p1_uid, bet)
+        db.add_turnover(p2_uid, bet)
 
-    def _handle_total(g: Game, uid: int, val: int):
-        p1, p2 = g.player1, g.player2
+        text = _t_finish(
+            g, winner_d, p1_d, p2_d,
+            p1_scores, p2_scores, p1_pts, p2_pts, draw,
+        )
+        bot.send_message(g["chat_id"], text, parse_mode="HTML")
 
-        if uid == p1.uid:
-            if len(p1.scores) >= g.rounds:
-                return  # p1 уже использовал все броски
-            p1.scores.append(val)
-        elif uid == p2.uid:
-            if len(p2.scores) >= g.rounds:
-                return  # p2 уже использовал все броски
-            p2.scores.append(val)
+    # ── x-режим ────────────────────────────────────────────────────────────
+
+    def _handle_x(g, uid: int, val: int):
+        game_id = g["id"]
+        p1_uid  = g["p1_uid"]
+        p2_uid  = g["p2_uid"]
+
+        p1_rv = g["p1_round_val"]
+        p2_rv = g["p2_round_val"]
+
+        # Защита от двойного броска в одном раунде
+        if uid == p1_uid:
+            if p1_rv is not None:
+                return
+            p1_rv = val
+        elif uid == p2_uid:
+            if p2_rv is not None:
+                return
+            p2_rv = val
         else:
             return
 
-        # Оба закончили все броски — подводим итог
-        if len(p1.scores) == g.rounds and len(p2.scores) == g.rounds:
-            s1, s2 = sum(p1.scores), sum(p2.scores)
-            if s1 > s2:
-                end_game(g, winner=p1)
-            elif s2 > s1:
-                end_game(g, winner=p2)
-            else:
-                end_game(g, draw=True)
-        else:
-            # Кто-то ещё не закончил — обновляем таблицу
-            edit_game(g, _t_total(g))
+        db.game_update_round(game_id, p1_rv, p2_rv, g["last_round_result"])
+        g = db.game_get(game_id)  # свежие данные
 
-    # ── Создание дуэли ─────────────────────────────────────────────────────
+        if p1_rv is not None and p2_rv is not None:
+            # Раунд завершён
+            v1, v2 = p1_rv, p2_rv
+            db.player_add_score(game_id, p1_uid, v1)
+            db.player_add_score(game_id, p2_uid, v2)
+
+            p1_pts = db.player_get_points(game_id, p1_uid)
+            p2_pts = db.player_get_points(game_id, p2_uid)
+            rnd_num = len(db.player_get_scores(game_id, p1_uid))
+
+            p1_d, p2_d = _load_displays(g)
+            if v1 > v2:
+                db.player_add_point(game_id, p1_uid)
+                p1_pts += 1
+                lrr = (
+                    f"Раунд {rnd_num}: {p1_d} выиграл бросок "
+                    f"({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
+                )
+            elif v2 > v1:
+                db.player_add_point(game_id, p2_uid)
+                p2_pts += 1
+                lrr = (
+                    f"Раунд {rnd_num}: {p2_d} выиграл бросок "
+                    f"({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
+                )
+            else:
+                lrr = (
+                    f"Раунд {rnd_num}: ничья ({v1}={v2}) — "
+                    f"счёт прежний {p1_pts}:{p2_pts}"
+                )
+
+            # Сбрасываем round_val
+            db.game_update_round(game_id, None, None, lrr)
+            g = db.game_get(game_id)
+
+            if p1_pts >= g["win_score"]:
+                _end_game(g, winner_uid=p1_uid)
+            elif p2_pts >= g["win_score"]:
+                _end_game(g, winner_uid=p2_uid)
+            else:
+                # Новый раунд — новое сообщение
+                safe_del(g["chat_id"], g["game_msg"])
+                p1_scores_len = len(db.player_get_scores(game_id, p1_uid))
+                text = _t_x(
+                    g, p1_d, p2_d, p1_pts, p2_pts, None, None, lrr,
+                    p1_scores_len + 1,
+                )
+                sent = bot.send_message(g["chat_id"], text, parse_mode="HTML")
+                db.game_set_game_msg(game_id, sent.message_id)
+        else:
+            # Один из двух бросил — обновляем сообщение
+            p1_d, p2_d = _load_displays(g)
+            p1_pts = db.player_get_points(game_id, p1_uid)
+            p2_pts = db.player_get_points(game_id, p2_uid)
+            p1_scores = db.player_get_scores(game_id, p1_uid)
+            rnd = len(p1_scores) + 1
+            text = _t_x(
+                g, p1_d, p2_d, p1_pts, p2_pts,
+                g["p1_round_val"], g["p2_round_val"],
+                g["last_round_result"], rnd,
+            )
+            edit_game_msg(g["chat_id"], g["game_msg"], text)
+
+    # ── total-режим ─────────────────────────────────────────────────────────
+
+    def _handle_total(g, uid: int, val: int):
+        game_id = g["id"]
+        p1_uid  = g["p1_uid"]
+        p2_uid  = g["p2_uid"]
+        rounds  = g["rounds"]
+
+        p1_scores = db.player_get_scores(game_id, p1_uid)
+        p2_scores = db.player_get_scores(game_id, p2_uid)
+
+        if uid == p1_uid:
+            if len(p1_scores) >= rounds:
+                return  # все броски уже использованы
+            db.player_add_score(game_id, p1_uid, val)
+            p1_scores = db.player_get_scores(game_id, p1_uid)
+        elif uid == p2_uid:
+            if len(p2_scores) >= rounds:
+                return
+            db.player_add_score(game_id, p2_uid, val)
+            p2_scores = db.player_get_scores(game_id, p2_uid)
+        else:
+            return
+
+        p1_d, p2_d = _load_displays(g)
+
+        if len(p1_scores) == rounds and len(p2_scores) == rounds:
+            s1, s2 = sum(p1_scores), sum(p2_scores)
+            if s1 > s2:
+                _end_game(g, winner_uid=p1_uid)
+            elif s2 > s1:
+                _end_game(g, winner_uid=p2_uid)
+            else:
+                _end_game(g, draw=True)
+        else:
+            text = _t_total(g, p1_d, p2_d, p1_scores, p2_scores)
+            edit_game_msg(g["chat_id"], g["game_msg"], text)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  ХЕНДЛЕРЫ
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # ── Создание дуэли ──────────────────────────────────────────────────────
 
     @bot.message_handler(func=is_duel_command)
     def cmd_create(message: Message):
@@ -389,137 +466,294 @@ def register(bot: telebot.TeleBot):
         if not parsed:
             return
         gtype, mode, rounds = parsed
+
+        # Для total минимум 2 броска (rounds уже >= 2 по regex, но явно)
+        if mode == "total" and rounds < 2:
+            bot.reply_to(message, "❌ Для total-режима минимальное число бросков — 2.")
+            return
+
         bet = _get_bet(message.text)
         if bet is None:
             bot.reply_to(
                 message,
-                f"❌ Укажи ставку. Пример: <code>/{gtype}{mode}{rounds} 100</code>",
+                f"❌ Укажи ставку от ${BET_MIN:.2f} до ${BET_MAX:,.0f}.\n"
+                f"Пример: <code>/{gtype}{mode}{rounds} 100</code>",
                 parse_mode="HTML",
             )
             return
+
+        uid = message.from_user.id
+        db.ensure_user(uid, message.from_user.username or "", _fmt_name(message.from_user))
+
+        # Проверка баланса
+        if db.get_balance(uid) < bet:
+            bot.reply_to(
+                message,
+                f"❌ Недостаточно средств. Ваш баланс: ${db.get_balance(uid):,.2f}",
+            )
+            return
+
         chat_id = message.chat.id
-        uid     = message.from_user.id
+
         with _lock:
-            if _get(chat_id):
-                bot.reply_to(message, "❌ Уже есть активная дуэль в этом чате!")
+            # Защита от дублей — один пользователь не может создать 2 lobby в одном чате
+            active = db.game_get_by_chat(chat_id)
+            for ag in active:
+                if ag["state"] == "lobby" and ag["p1_uid"] == uid:
+                    bot.reply_to(
+                        message,
+                        "❌ У тебя уже есть активная lobby-дуэль в этом чате!\n"
+                        "Отмени её через /del (реплай) или /cancelduel.",
+                    )
+                    return
+                if ag["state"] in ("lobby", "playing"):
+                    if ag["p1_uid"] == uid or ag["p2_uid"] == uid:
+                        bot.reply_to(
+                            message,
+                            "❌ Ты уже участвуешь в активной дуэли в этом чате!",
+                        )
+                        return
+
+            # Списываем ставку сразу
+            if not db.subtract_balance(uid, bet):
+                bot.reply_to(
+                    message,
+                    f"❌ Недостаточно средств. Ваш баланс: ${db.get_balance(uid):,.2f}",
+                )
                 return
-            p1   = Player(uid=uid, name=_fmt_name(message.from_user),
-                          username=message.from_user.username or "")
-            game = Game(
+
+            game_id = db.game_create(
                 chat_id=chat_id,
                 game_type=gtype,
                 mode=mode,
                 rounds=rounds,
                 win_score=rounds,
                 bet=bet,
-                player1=p1,
+                p1_uid=uid,
             )
-            _set(game)
+
+        g = db.game_get(game_id)
+        p1_d, _ = _load_displays(g)
 
         sent = bot.send_message(
             chat_id,
-            _t_lobby(game),
+            _t_lobby(g, p1_d),
             parse_mode="HTML",
-            reply_markup=_kb_lobby(),
+            reply_markup=_kb_lobby(game_id),
         )
-        with _lock:
-            g = _get(chat_id)
-            if g:
-                g.lobby_msg = sent.message_id
+        db.game_set_lobby_msg(game_id, sent.message_id)
 
-    # ── Принятие дуэли через inline-кнопку ────────────────────────────────
+    # ── Вступление в дуэль через inline-кнопку ──────────────────────────────
 
-    @bot.callback_query_handler(func=lambda call: call.data == "duel_join")
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("duel_join:"))
     def cb_join(call):
-        chat_id = call.message.chat.id
+        game_id = int(call.data.split(":")[1])
         uid     = call.from_user.id
 
         with _lock:
-            g = _get(chat_id)
-            if not g or g.state != "lobby":
-                bot.answer_callback_query(call.id, "Дуэль уже недоступна.", show_alert=True)
+            g = db.game_get(game_id)
+            if not g or g["state"] != "lobby":
+                bot.answer_callback_query(call.id, "Дуэль недоступна.", show_alert=True)
                 return
-            if uid == g.player1.uid:
+            if uid == g["p1_uid"]:
                 bot.answer_callback_query(call.id, "Нельзя играть самим с собой!", show_alert=True)
                 return
 
-            p2 = Player(uid=uid, name=_fmt_name(call.from_user),
-                        username=call.from_user.username or "")
-            g.player2 = p2
-            g.state   = "playing"
+            # Проверяем что p2 ещё не участвует в другой игре этого чата
+            active = db.game_get_by_chat(g["chat_id"])
+            for ag in active:
+                if ag["id"] == game_id:
+                    continue
+                if ag["state"] in ("lobby", "playing") and (
+                        ag["p1_uid"] == uid or ag["p2_uid"] == uid):
+                    bot.answer_callback_query(
+                        call.id, "Ты уже участвуешь в другой дуэли в этом чате!", show_alert=True
+                    )
+                    return
+
+            db.ensure_user(uid, call.from_user.username or "", _fmt_name(call.from_user))
+
+            if db.get_balance(uid) < g["bet"]:
+                bot.answer_callback_query(
+                    call.id,
+                    f"Недостаточно средств! Нужно: ${g['bet']:,.2f}",
+                    show_alert=True,
+                )
+                return
+
+            if not db.subtract_balance(uid, g["bet"]):
+                bot.answer_callback_query(call.id, "Ошибка списания средств.", show_alert=True)
+                return
+
+            db.game_join(game_id, uid)
 
         bot.answer_callback_query(call.id, "✅ Ты в игре!")
-        safe_del(chat_id, g.lobby_msg)
+        safe_del(g["chat_id"], g["lobby_msg"])
 
-        text = _t_x(g) if g.mode == "x" else _t_total(g)
-        sent = bot.send_message(chat_id, text, parse_mode="HTML")
+        g = db.game_get(game_id)
+        p1_d, p2_d = _load_displays(g)
+
+        if g["mode"] == "x":
+            text = _t_x(g, p1_d, p2_d, 0, 0, None, None, "", 1)
+        else:
+            text = _t_total(g, p1_d, p2_d, [], [])
+
+        sent = bot.send_message(g["chat_id"], text, parse_mode="HTML")
+        db.game_set_game_msg(game_id, sent.message_id)
+
+    # ── /del — удалить дуэль реплаем ────────────────────────────────────────
+
+    @bot.message_handler(commands=["del"])
+    def cmd_del(message: Message):
+        uid = message.from_user.id
+
+        if not message.reply_to_message:
+            bot.reply_to(
+                message,
+                "❌ Сделай реплай на сообщение дуэли, которую хочешь удалить.",
+            )
+            return
+
+        reply_msg_id = message.reply_to_message.message_id
+        chat_id = message.chat.id
+
         with _lock:
-            gx = _get(chat_id)
-            if gx:
-                gx.game_msg = sent.message_id
+            games = db.game_get_by_chat(chat_id)
+            target = None
+            for ag in games:
+                if ag["lobby_msg"] == reply_msg_id or ag["game_msg"] == reply_msg_id:
+                    target = ag
+                    break
 
-    # ── Отмена через inline-кнопку ─────────────────────────────────────────
+            if not target:
+                bot.reply_to(message, "❌ Дуэль не найдена или уже завершена.")
+                return
+            if target["state"] != "lobby":
+                bot.reply_to(message, "❌ Нельзя удалить дуэль в процессе игры.")
+                return
+            if target["p1_uid"] != uid:
+                bot.reply_to(message, "❌ Удалить дуэль может только её создатель.")
+                return
 
-    @bot.callback_query_handler(func=lambda call: call.data == "duel_cancel")
-    def cb_cancel(call):
-        chat_id = call.message.chat.id
-        uid     = call.from_user.id
+            # Возврат ставки создателю
+            db.add_balance(uid, target["bet"])
+            db.game_delete(target["id"])
+
+        safe_del(chat_id, target["lobby_msg"])
+        bot.send_message(chat_id, f"❌ Дуэль удалена. Ставка возвращена.", parse_mode="HTML")
+
+    # ── /delall — удалить все свои lobby-дуэли ──────────────────────────────
+
+    @bot.message_handler(commands=["delall"])
+    def cmd_delall(message: Message):
+        uid = message.from_user.id
+
         with _lock:
-            g = _get(chat_id)
-            if not g:
-                bot.answer_callback_query(call.id, "Нет активной дуэли.")
+            lobby_games = db.game_get_by_creator(uid)
+            if not lobby_games:
+                bot.reply_to(message, "ℹ️ У тебя нет активных lobby-дуэлей.")
                 return
-            if g.player1.uid != uid:
-                bot.answer_callback_query(call.id, "Отменить может только создатель.", show_alert=True)
-                return
-            _del(chat_id)
+            for g in lobby_games:
+                db.add_balance(uid, g["bet"])
+                safe_del(g["chat_id"], g["lobby_msg"])
+                db.game_delete(g["id"])
 
-        bot.answer_callback_query(call.id)
-        mid = g.game_msg or g.lobby_msg
-        if mid:
-            safe_del(chat_id, mid)
-        bot.send_message(
-            chat_id,
-            f"❌ Дуэль отменена — {g.player1.display}",
-            parse_mode="HTML",
+        bot.reply_to(
+            message,
+            f"✅ Удалено {len(lobby_games)} дуэль(ей). Ставки возвращены.",
         )
 
-    # ── Броски костей ──────────────────────────────────────────────────────
+    # ── /myg /mygames — список своих активных дуэлей ────────────────────────
+
+    @bot.message_handler(commands=["myg", "mygames"])
+    def cmd_myg(message: Message):
+        uid = message.from_user.id
+        games = db.game_get_all_active_for_user(uid)
+        bot.reply_to(message, _t_my_games(games), parse_mode="HTML")
+
+    # ── /cancelduel — отмена через команду ───────────────────────────────────
+
+    @bot.message_handler(commands=["cancelduel"])
+    def cmd_cancel(message: Message):
+        uid     = message.from_user.id
+        chat_id = message.chat.id
+
+        with _lock:
+            active = db.game_get_by_chat(chat_id)
+            target = None
+            for ag in active:
+                if ag["p1_uid"] == uid and ag["state"] == "lobby":
+                    target = ag
+                    break
+
+            if not target:
+                bot.reply_to(message, "❌ Нет твоей активной lobby-дуэли в этом чате.")
+                return
+
+            db.add_balance(uid, target["bet"])
+            db.game_delete(target["id"])
+
+        safe_del(chat_id, target["lobby_msg"])
+        bot.send_message(chat_id, "❌ Дуэль отменена. Ставка возвращена.", parse_mode="HTML")
+
+    # ── Inline-кнопка отмены из lobby-сообщения ─────────────────────────────
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("duel_cancel:"))
+    def cb_cancel(call):
+        game_id = int(call.data.split(":")[1])
+        uid     = call.from_user.id
+
+        with _lock:
+            g = db.game_get(game_id)
+            if not g:
+                bot.answer_callback_query(call.id, "Дуэль не найдена.", show_alert=True)
+                return
+            if g["p1_uid"] != uid:
+                bot.answer_callback_query(call.id, "Отменить может только создатель.", show_alert=True)
+                return
+            if g["state"] != "lobby":
+                bot.answer_callback_query(call.id, "Дуэль уже началась — нельзя отменить.", show_alert=True)
+                return
+
+            db.add_balance(uid, g["bet"])
+            db.game_delete(game_id)
+
+        bot.answer_callback_query(call.id)
+        safe_del(g["chat_id"], g["lobby_msg"])
+        bot.send_message(g["chat_id"], "❌ Дуэль отменена. Ставка возвращена.", parse_mode="HTML")
+
+    # ── Броски костей ────────────────────────────────────────────────────────
 
     @bot.message_handler(content_types=["dice"], func=is_duel_dice)
     def handle_dice(message: Message):
         chat_id = message.chat.id
         uid     = message.from_user.id
+        val     = message.dice.value
+        gtype   = EMOJI_TO_TYPE[message.dice.emoji]
+
         with _lock:
-            g = _get(chat_id)
+            games = db.game_get_by_chat(chat_id)
+            g = None
+            for ag in games:
+                if (ag["state"] == "playing"
+                        and ag["game_msg"] == message.reply_to_message.message_id
+                        and ag["game_type"] == gtype):
+                    g = ag
+                    break
+
             if not g:
                 return
-            val = message.dice.value
-            if g.mode == "x":
+
+            if g["mode"] == "x":
                 _handle_x(g, uid, val)
             else:
                 _handle_total(g, uid, val)
 
-    # ── /cancelduel командой ───────────────────────────────────────────────
+    # ── Активные игры для главного меню (используется из main.py) ───────────
 
-    @bot.message_handler(commands=["cancelduel"])
-    def cmd_cancel(message: Message):
-        chat_id = message.chat.id
-        uid     = message.from_user.id
-        with _lock:
-            g = _get(chat_id)
-            if not g:
-                bot.reply_to(message, "❌ Нет активной дуэли.")
-                return
-            if g.player1.uid != uid:
-                bot.reply_to(message, "❌ Отменить может только создатель.")
-                return
-            _del(chat_id)
-        mid = g.game_msg or g.lobby_msg
-        if mid:
-            safe_del(chat_id, mid)
-        bot.send_message(
-            chat_id,
-            f"❌ Дуэль отменена — {g.player1.display}",
-            parse_mode="HTML",
-        )
+    def get_all_lobby_games() -> list:
+        """Публичный API для main.py — все lobby-дуэли для кнопки 'Активные игры'."""
+        return db.game_get_active_lobby_all()
+
+    # Делаем доступной из модуля
+    register.get_lobby_games = get_all_lobby_games
