@@ -17,20 +17,20 @@ ADMINS = {8118184388}
 #  EMOJI IDs
 # ══════════════════════════════════════════════════════════════════════════════
 
-EMOJI_PROFILE    = "5904462880941545555"
-EMOJI_GAMES      = "5904462880941545555"
-EMOJI_REFERRALS  = "5904462880941545555"
-EMOJI_STATISTICS = "5904462880941545555"
-EMOJI_ABOUT      = "5904462880941545555"
-EMOJI_BACK       = "5904462880941545555"
+EMOJI_PROFILE    = "5260399854500191689"
+EMOJI_GAMES      = "6039496266180726678"
+EMOJI_REFERRALS  = "5258513401784573443"
+EMOJI_STATISTICS = "5258330865674494479"
+EMOJI_ABOUT      = "5357069174512303778"
+EMOJI_BACK       = "6039539366177541657"
 
 EMOJI_DEPOSIT    = "5904462880941545555"
-EMOJI_WITHDRAW   = "5904462880941545555"
-EMOJI_ID         = "5904462880941545555"
-EMOJI_USERNAME   = "5904462880941545555"
+EMOJI_WITHDRAW   = "5258043150110301407"
+EMOJI_ID         = "6030776052345737530"
+EMOJI_USERNAME   = "5258185631355378853"
 EMOJI_TURNOVER   = "5904462880941545555"
-EMOJI_DAYS       = "5904462880941545555"
-EMOJI_BALANCE    = "5904462880941545555"
+EMOJI_DAYS       = "5258330865674494479"
+EMOJI_BALANCE    = "5258204546391351475"
 EMOJI_RANK       = "5904462880941545555"
 
 EMOJI_TOTAL_DEP  = "5904462880941545555"
@@ -40,13 +40,13 @@ EMOJI_FILTER_DAY = "5904462880941545555"
 EMOJI_FILTER_WEK = "5904462880941545555"
 EMOJI_FILTER_ALL = "5904462880941545555"
 
-EMOJI_LINK       = "5904462880941545555"
-EMOJI_INVITED    = "5904462880941545555"
-EMOJI_EARNED     = "5904462880941545555"
+EMOJI_LINK       = "5260730055880876557"
+EMOJI_INVITED    = "5258513401784573443"
+EMOJI_EARNED     = "5890848474563352982"
 
-EMOJI_CHAT       = "5904462880941545555"
-EMOJI_SUPPORT    = "5904462880941545555"
-EMOJI_NEWS       = "5904462880941545555"
+EMOJI_CHAT       = "5258215846450305872"
+EMOJI_SUPPORT    = "5357069174512303778"
+EMOJI_NEWS       = "5258185631355378853"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HELPERS
@@ -145,7 +145,7 @@ def kb_active_games(games: list) -> InlineKeyboardMarkup:
 def kb_duel_view(game_id: int) -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
     m.row(InlineKeyboardButton(text="➕ Присоединиться", callback_data=f"duel_join:{game_id}"))
-    m.row(btn("◀️ Назад", "active_games", EMOJI_BACK))
+    m.row(btn("Назад", "active_games", EMOJI_BACK))
     return m
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -159,14 +159,12 @@ def text_profile(user) -> str:
     balance  = row["balance"]  if row else 0.0
     turnover = row["turnover"] if row else 0.0
     days     = db.days_since_registration(uid)
-    rank     = "Новичок"
     return (
         f'<tg-emoji emoji-id="{EMOJI_PROFILE}">👤</tg-emoji> <b>Профиль</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'<tg-emoji emoji-id="{EMOJI_ID}">🆔</tg-emoji> <b>ID:</b>  <code>{uid}</code>\n'
         f'<tg-emoji emoji-id="{EMOJI_USERNAME}">✏️</tg-emoji> <b>Юзернейм:</b>  {username}\n'
         f'<tg-emoji emoji-id="{EMOJI_DAYS}">📅</tg-emoji> <b>В проекте:</b>  {days} дн.\n'
-        f'<tg-emoji emoji-id="{EMOJI_RANK}">🏆</tg-emoji> <b>Ранг:</b>  {rank}\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'<tg-emoji emoji-id="{EMOJI_BALANCE}">💎</tg-emoji> <b>Баланс:</b>  <b>${balance:,.2f}</b>\n'
         f'<tg-emoji emoji-id="{EMOJI_TURNOVER}">🔄</tg-emoji> <b>Оборот:</b>  <b>${turnover:,.2f}</b>\n'
