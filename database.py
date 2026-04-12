@@ -1,15 +1,3 @@
-"""
-database.py — SQLite-хранилище (WAL-mode, thread-safe)
-
-Таблицы:
-  users        — балансы, оборот, рефералы, дата регистрации
-  games        — активные / завершённые дуэли
-  game_players — данные каждого игрока в дуэли (очки, броски)
-  deposits     — пополнения через CryptoBot (защита от дублей по invoice_id)
-  withdrawals  — заявки на вывод через CryptoBot чек
-  referral_log — лог реферальных начислений (защита от дублей по game_id)
-"""
-
 import json
 import sqlite3
 import threading
@@ -22,7 +10,6 @@ _local = threading.local()
 
 
 def _conn() -> sqlite3.Connection:
-    """Возвращает соединение для текущего потока (одно на поток)."""
     if not hasattr(_local, "conn"):
         con = sqlite3.connect(DB_PATH, check_same_thread=False)
         con.row_factory = sqlite3.Row
@@ -43,9 +30,9 @@ def _ex(sql: str, params=(), *, fetch: str = "none"):
     return cur
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  INIT
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+       
+                                                                                
 
 def init_db():
     con = _conn()
@@ -139,16 +126,12 @@ def init_db():
     con.commit()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  USERS
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+        
+                                                                                
 
 def ensure_user(uid: int, username: str = "", first_name: str = "",
                 ref_by: Optional[int] = None):
-    """
-    Регистрирует пользователя если его нет. ref_by записывается ТОЛЬКО
-    при первом создании строки (INSERT) — на UPDATE не влияет, дюпов нет.
-    """
     con = _conn()
     if ref_by is not None:
         con.execute(
@@ -174,7 +157,6 @@ def ensure_user(uid: int, username: str = "", first_name: str = "",
 
 
 def is_new_user(uid: int) -> bool:
-    """Возвращает True если пользователь ещё не зарегистрирован."""
     row = _ex("SELECT uid FROM users WHERE uid=?", (uid,), fetch="one")
     return row is None
 
@@ -192,7 +174,6 @@ def add_balance(uid: int, amount: float):
 
 
 def subtract_balance(uid: int, amount: float) -> bool:
-    """Списывает amount если средств достаточно. Возвращает True при успехе."""
     con = _conn()
     cur = con.execute(
         "UPDATE users SET balance=ROUND(balance-?,2) WHERE uid=? AND balance>=?",
@@ -228,7 +209,6 @@ def resolve_username(username: str) -> Optional[int]:
 
 
 def get_referral_stats(uid: int):
-    """Возвращает (ref_count, ref_earned) из таблицы users."""
     row = _ex(
         "SELECT ref_count, ref_earned FROM users WHERE uid=?",
         (uid,),
@@ -238,7 +218,6 @@ def get_referral_stats(uid: int):
 
 
 def get_ref_by(uid: int) -> Optional[int]:
-    """Возвращает uid реферера или None."""
     row = _ex("SELECT ref_by FROM users WHERE uid=?", (uid,), fetch="one")
     return row["ref_by"] if row else None
 
@@ -274,25 +253,14 @@ def days_since_registration(uid: int) -> int:
     return int(row["d"]) if row and row["d"] is not None else 0
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  REFERRALS
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+            
+                                                                                
 
-REF_PERCENT = 0.01   # 1% от выигрыша победителя
+REF_PERCENT = 0.01                              
 
 
 def referral_try_reward(game_id: int, winner_uid: int, win_amount: float) -> Optional[tuple]:
-    """
-    Пытается начислить реферальное вознаграждение рефереру победителя.
-
-    Защита от дублей: UNIQUE(game_id, ref_uid) в referral_log.
-    Если запись уже есть — ничего не делаем (INSERT OR IGNORE).
-
-    Возвращает (ref_uid, reward) если начисление прошло, иначе None.
-
-    win_amount — это ПОЛНЫЙ выигрыш победителя (bet * 2).
-    Реферер получает REF_PERCENT от этой суммы.
-    """
     ref_uid = get_ref_by(winner_uid)
     if ref_uid is None:
         return None
@@ -311,13 +279,13 @@ def referral_try_reward(game_id: int, winner_uid: int, win_amount: float) -> Opt
         )
         con.commit()
         if cur.rowcount == 0:
-            # Уже было начислено (дюп) — ничего не делаем
+                                                         
             return None
     except Exception:
         con.rollback()
         return None
 
-    # Начисляем баланс и обновляем счётчики реферера
+                                                    
     con.execute(
         """UPDATE users
            SET balance    = ROUND(balance + ?, 2),
@@ -331,7 +299,6 @@ def referral_try_reward(game_id: int, winner_uid: int, win_amount: float) -> Opt
 
 
 def referral_log_history(ref_uid: int, limit: int = 20) -> list:
-    """История начислений для конкретного реферера."""
     return _ex(
         """SELECT rl.*, u.username, u.first_name
            FROM referral_log rl
@@ -344,9 +311,9 @@ def referral_log_history(ref_uid: int, limit: int = 20) -> list:
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  DEPOSITS
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+           
+                                                                                
 
 def deposit_create(uid: int, invoice_id: int, amount: float, asset: str) -> Optional[int]:
     try:
@@ -395,9 +362,9 @@ def deposit_history(uid: int, limit: int = 10) -> list:
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  WITHDRAWALS
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+              
+                                                                                
 
 def withdrawal_create(uid: int, amount: float, asset: str) -> Optional[int]:
     con = _conn()
@@ -470,9 +437,9 @@ def withdrawal_has_pending(uid: int) -> bool:
     return row is not None
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  GAMES
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+        
+                                                                                
 
 def game_create(
     chat_id: int, game_type: str, mode: str,
@@ -578,7 +545,7 @@ def game_finish(game_id: int):
     _ex("UPDATE games SET state='finished' WHERE id=?", (game_id,))
 
 
-# ── Игроки ─────────────────────────────────────────────────────────────────
+                                                                             
 
 def player_get(game_id: int, uid: int) -> Optional[sqlite3.Row]:
     return _ex(
