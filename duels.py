@@ -380,14 +380,12 @@ def register(bot: telebot.TeleBot):
                 p1_pts += 1
                 lrr = (
                     f"Раунд {rnd_num}:({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
-                    f"({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
                 )
             elif v2 > v1:
                 db.player_add_point(game_id, p2_uid)
                 p2_pts += 1
                 lrr = (
                     f"Раунд {rnd_num}:({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
-                    f"({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
                 )
             else:
                 lrr = (
@@ -480,14 +478,14 @@ def register(bot: telebot.TeleBot):
 
         # Для total минимум 2 броска (rounds уже >= 2 по regex, но явно)
         if mode == "total" and rounds < 2:
-            bot.reply_to(message, "❌ Для total-режима минимальное число бросков — 2.")
+            bot.reply_to(message, "❌ Для total-режима минимальное число бросков — 2!")
             return
 
         bet = _get_bet(message.text)
         if bet is None:
             bot.reply_to(
                 message,
-                f"❌ Укажи ставку от ${BET_MIN:.2f} до ${BET_MAX:,.0f}.\n"
+                f"❌ Укажи ставку от ${BET_MIN:.2f} до ${BET_MAX:,.0f}!\n"
                 f"Пример: <code>/{gtype}{mode}{rounds} 100</code>",
                 parse_mode="HTML",
             )
@@ -500,7 +498,7 @@ def register(bot: telebot.TeleBot):
         if db.get_balance(uid) < bet:
             bot.reply_to(
                 message,
-                f"❌ Недостаточно средств. Ваш баланс: ${db.get_balance(uid):,.2f}",
+                f"❌ Недостаточно средств!",
             )
             return
 
@@ -513,8 +511,7 @@ def register(bot: telebot.TeleBot):
                 if ag["state"] == "lobby" and ag["p1_uid"] == uid:
                     bot.reply_to(
                         message,
-                        "❌ У тебя уже есть активная lobby-дуэль в этом чате!\n"
-                        "Отмени её через /del (реплай) или /cancelduel.",
+                        "❌ У тебя уже есть активная lobby-дуэль в этом чате!\n",
                     )
                     return
                 if ag["state"] in ("lobby", "playing"):
@@ -529,7 +526,7 @@ def register(bot: telebot.TeleBot):
             if not db.subtract_balance(uid, bet):
                 bot.reply_to(
                     message,
-                    f"❌ Недостаточно средств. Ваш баланс: ${db.get_balance(uid):,.2f}",
+                    f"❌ Недостаточно средств!",
                 )
                 return
 
