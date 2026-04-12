@@ -179,10 +179,10 @@ def text_stats(period: str = "all") -> str:
     return (
         f'<tg-emoji emoji-id="{EMOJI_STATISTICS}">📊</tg-emoji> <b>Статистика — {label}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
-        f'<tg-emoji emoji-id="{EMOJI_TOTAL_DEP}">📥</tg-emoji> <b>Всего пополнений:</b>  <b>${s["total_dep"]:,.2f}</b>\n'
-        f'<tg-emoji emoji-id="{EMOJI_TOTAL_WITH}">📤</tg-emoji> <b>Всего выводов:</b>    <b>${s["total_with"]:,.2f}</b>\n'
-        f'<tg-emoji emoji-id="{EMOJI_TURNOVER}">🔄</tg-emoji> <b>Оборот:</b>           <b>${s["turnover"]:,.2f}</b>\n'
-        f'<tg-emoji emoji-id="{EMOJI_PROFIT}">💰</tg-emoji> <b>Прибыль:</b>          <b>${s["profit"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="5904462880941545555">📥</tg-emoji> <b>Всего пополнений:</b>  <b>${s["total_dep"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="5258043150110301407">📤</tg-emoji> <b>Всего выводов:</b>    <b>${s["total_with"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="6030833407339008632">🔄</tg-emoji> <b>Оборот:</b>           <b>${s["turnover"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="5890848474563352982">💰</tg-emoji> <b>Прибыль:</b>          <b>${s["profit"]:,.2f}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━'
     )
 
@@ -199,7 +199,7 @@ def text_referrals(user) -> str:
         f'<tg-emoji emoji-id="{EMOJI_INVITED}">👤</tg-emoji> <b>Приглашено:</b>  <b>{invited} чел.</b>\n'
         f'<tg-emoji emoji-id="{EMOJI_EARNED}">💵</tg-emoji> <b>Заработано:</b>  <b>${earned:,.2f}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
-        f'💡 Вы получаете <b>1%</b> от выигрыша каждого\n'
+        f'Вы получаете <b>1%</b> от выигрыша каждого\n'
         f'приглашённого реферала — прямо на баланс!'
     )
 
@@ -207,13 +207,6 @@ def text_referrals(user) -> str:
 def text_about() -> str:
     return (
         f'<tg-emoji emoji-id="{EMOJI_ABOUT}">ℹ️</tg-emoji> <b>О проекте</b>\n'
-        f'━━━━━━━━━━━━━━━━━━━━━\n'
-        f'Добро пожаловать в наш проект!\n\n'
-        f'Мы предоставляем честную и прозрачную\n'
-        f'платформу для игр и заработка.\n\n'
-        f'По всем вопросам обращайтесь в поддержку\n'
-        f'или следите за новостями в канале.\n'
-        f'━━━━━━━━━━━━━━━━━━━━━'
     )
 
 
@@ -222,14 +215,11 @@ def text_active_games(games: list) -> str:
         return (
             f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━━\n'
-            f'Сейчас нет открытых дуэлей.\n\n'
-            f'Создай свою — отправь команду вида:\n'
-            f'<code>/cubx3 50</code>  или  <code>/cubtotal2 100</code>'
+            f'<tg-emoji emoji-id="6030776052345737530">⚔️</tg-emoji>Пусто.\n'
+
         )
     return (
         f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>  ({len(games)} шт.)\n'
-        f'━━━━━━━━━━━━━━━━━━━━━\n'
-        f'Выбери дуэль чтобы посмотреть подробности:'
     )
 
 
@@ -361,7 +351,7 @@ def cmd_sub(message):
 #  HANDLERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-WELCOME_TEXT = "🏠 <b>Главное меню</b>\n\nДобро пожаловать! Выберите раздел:"
+WELCOME_TEXT = "Добро пожаловать, стрелок.\n</b>\n\nЗдесь слова имеют вес только если подкреплены звоном монет. Хочешь доказать, что ты лучший? \nПриготовь свой кошелек и хладнокровие!"
 
 
 @bot.message_handler(commands=["start", "menu"])
