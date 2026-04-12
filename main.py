@@ -137,8 +137,15 @@ def kb_active_games(games: list) -> InlineKeyboardMarkup:
         e = DICE_EMOJI.get(g["game_type"], "🎲")
         mode = "очки" if g["mode"] == "x" else "сумма"
         label = f"{e} ${g['bet']:,.2f} | {g['rounds']}р {mode}"
-        m.row(InlineKeyboardButton(text=label, callback_data=f"duel_join:{g['id']}"))
+        m.row(InlineKeyboardButton(text=label, callback_data=f"duel_view:{g['id']}"))
     m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
+    return m
+
+
+def kb_duel_view(game_id: int) -> InlineKeyboardMarkup:
+    m = InlineKeyboardMarkup()
+    m.row(InlineKeyboardButton(text="➕ Присоединиться", callback_data=f"duel_join:{game_id}"))
+    m.row(btn("◀️ Назад", "active_games", EMOJI_BACK))
     return m
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -224,8 +231,27 @@ def text_active_games(games: list) -> str:
     return (
         f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>  ({len(games)} шт.)\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
-        f'Нажми на игру чтобы присоединиться:'
+        f'Выбери дуэль чтобы посмотреть подробности:'
     )
+
+
+def text_duel_view(g) -> str:
+    e = DICE_EMOJI.get(g["game_type"], "🎲")
+    mode_lbl = f"до {g['win_score']} очков" if g["mode"] == "x" else f"{g['rounds']} бросков • сумма"
+    p1_row  = db.get_user_row(g["p1_uid"])
+    p1_un   = p1_row["username"] if p1_row and p1_row["username"] else ""
+    p1_name = p1_row["first_name"] if p1_row and p1_row["first_name"] else str(g["p1_uid"])
+    p1_d    = f"@{p1_un}" if p1_un else p1_name
+    return (
+        f'{e} <b>Дуэль — информация</b>\n'
+        f'━━━━━━━━━━━━━━━━━━━━━\n'
+        f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Режим:</b>  {mode_lbl}\n'
+        f'<tg-emoji emoji-id="{EMOJI_BALANCE}">💎</tg-emoji> <b>Ставка:</b>  <b>${g["bet"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_PROFILE}">👤</tg-emoji> <b>Создатель:</b>  {p1_d}\n'
+        f'━━━━━━━━━━━━━━━━━━━━━\n'
+        f'Нажми <b>Присоединиться</b> чтобы вступить в игру!'
+    )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ADMIN — /add  /sub
@@ -352,7 +378,7 @@ def start_handler(message):
 
 
 @bot.callback_query_handler(func=lambda call: not (
-    call.data.startswith("duel_join:") or call.data.startswith("duel_cancel:")
+    call.data.startswith("duel_join:") or call.data.startswith("duel_cancel:") or call.data.startswith("duel_view:")
 ))
 def callback_handler(call):
     chat_id = call.message.chat.id
@@ -385,6 +411,18 @@ def callback_handler(call):
     elif data == "active_games":
         games = db.game_get_active_lobby_all()
         edit(text_active_games(games), kb_active_games(games))
+    elif data.startswith("duel_view:"):
+        game_id = int(data.split(":")[1])
+        g = db.game_get(game_id)
+        if not g or g["state"] != "lobby":
+            edit(
+                f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━━\n'
+                f'❌ Эта дуэль уже недоступна.',
+                kb_back(),
+            )
+        else:
+            edit(text_duel_view(g), kb_duel_view(game_id))
     elif data == "referrals":
         edit(text_referrals(user), kb_back())
     elif data in ("statistics", "stats_all"):
