@@ -335,8 +335,8 @@ def register(bot: telebot.TeleBot):
         text = (
             f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n"
-            f"<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:    <b>${g['bet']:,.2f}</b>\n"
+            f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
+            f'<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:    <b>${g['bet']:,.2f}</b>\n'
             f" <b>{mode_lbl}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
         )
