@@ -1,25 +1,19 @@
 """
 payments.py — пополнение и вывод через @CryptoBot (CryptoPay API)
 
-Пополнение:
-  Пользователь вводит сумму → бот создаёт invoice через CryptoPay →
-  присылает кнопку-ссылку → CryptoBot присылает webhook/polling уведомление →
-  бот подтверждает оплату атомарно через deposit_confirm() → зачисляет баланс.
+Вся навигация только через edit_message_text — никаких новых сообщений.
+FSM хранит (chat_id, message_id) исходного меню-сообщения и редактирует его.
 
-  Защита от дублей:
-    • invoice_id уникален в таблице deposits (UNIQUE constraint)
-    • deposit_confirm() использует UPDATE ... WHERE status='pending'
-      (вернёт rowcount=0 если уже обработан)
-    • Фоновый поллинг проверяет только 'pending' счета
+Защита от дублей:
+  • invoice_id — UNIQUE в таблице deposits
+  • deposit_confirm() — UPDATE WHERE status='pending' (rowcount=0 если уже обработан)
+  • withdrawal_create() — атомарное списание + создание заявки в одной транзакции
+  • withdrawal_has_pending() — блокирует параллельные запросы одного юзера
 
-Вывод:
-  Пользователь вводит сумму → БД атомарно списывает баланс + создаёт заявку →
-  бот создаёт чек через CryptoPay → шлёт ссылку пользователю.
-  При ошибке API — деньги возвращаются через withdrawal_set_failed().
-
-Команды (только в ЛС бота):
-  /deposit  — начать пополнение
-  /withdraw — начать вывод
+Настройки:
+  DEPOSIT_MIN       = 0.10 USDT
+  INVOICE_EXPIRE_IN = 300 сек (5 мин)
+  POLL_INTERVAL     = 3 сек
 """
 
 import threading
@@ -36,27 +30,22 @@ import database as db
 logger = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  КОНФИГ — заполни своими данными
+#  КОНФИГ
 # ══════════════════════════════════════════════════════════════════════════════
 
-CRYPTO_PAY_TOKEN = "552018:AAmEzVekZI0E1Qcpi0ccOxbkOMk01J2Qs2n"   # Получить у @CryptoBot → /pay
-CRYPTO_PAY_URL   = "https://pay.crypt.bot/api"  # mainnet
-# CRYPTO_PAY_URL = "https://testnet-pay.crypt.bot/api"  # testnet для теста
+CRYPTO_PAY_TOKEN  = "552018:AAmEzVekZI0E1Qcpi0ccOxbkOMk01J2Qs2n"          # @CryptoBot → /pay
+CRYPTO_PAY_URL    = "https://pay.crypt.bot/api"     # mainnet
+# CRYPTO_PAY_URL  = "https://testnet-pay.crypt.bot/api"   # testnet
 
-# Валюта по умолчанию (поддерживаемые: USDT, TON, BTC, ETH, BNB, TRX, USDC)
-DEFAULT_ASSET = "USDT"
+DEFAULT_ASSET     = "USDT"
 
-# Минимальные и максимальные суммы (в USD-эквиваленте)
-DEPOSIT_MIN  = 0.1
-DEPOSIT_MAX  = 10_000.0
-WITHDRAW_MIN = 1.0
-WITHDRAW_MAX = 10_000.0
+DEPOSIT_MIN       = 0.10
+DEPOSIT_MAX       = 10_000.0
+WITHDRAW_MIN      = 0.10
+WITHDRAW_MAX      = 10_000.0
 
-# Интервал фонового поллинга оплаченных счетов (секунды)
-POLL_INTERVAL = 3
-
-# Срок жизни инвойса (секунды, CryptoBot поддерживает до 1 часа = 3600)
-INVOICE_EXPIRE_IN = 3600
+POLL_INTERVAL     = 3           # секунды между проверками оплаты
+INVOICE_EXPIRE_IN = 300         # 5 минут срок жизни счёта
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CryptoPay API клиент
@@ -74,29 +63,23 @@ class CryptoPayClient:
             r = self.session.post(
                 f"{self.base_url}/{method}",
                 json=kwargs,
-                timeout=15,
+                timeout=10,
             )
             data = r.json()
             if data.get("ok"):
                 return data["result"]
-            logger.error("CryptoPay error [%s]: %s", method, data)
+            logger.error("CryptoPay [%s]: %s", method, data)
             return None
         except Exception as e:
-            logger.error("CryptoPay request failed [%s]: %s", method, e)
+            logger.error("CryptoPay request [%s] failed: %s", method, e)
             return None
 
     def get_me(self) -> Optional[dict]:
         return self._call("getMe")
 
-    def create_invoice(
-        self,
-        asset: str,
-        amount: float,
-        description: str = "",
-        payload: str = "",
-        expires_in: int = INVOICE_EXPIRE_IN,
-    ) -> Optional[dict]:
-        """Создаёт счёт на оплату. Возвращает dict с полями invoice_id, pay_url и др."""
+    def create_invoice(self, asset: str, amount: float,
+                       description: str = "", payload: str = "",
+                       expires_in: int = INVOICE_EXPIRE_IN) -> Optional[dict]:
         return self._call(
             "createInvoice",
             asset=asset,
@@ -106,32 +89,13 @@ class CryptoPayClient:
             expires_in=expires_in,
         )
 
-    def get_invoices(
-        self,
-        status: str = "paid",
-        offset: int = 0,
-        count: int = 100,
-    ) -> list:
-        """Возвращает список инвойсов с заданным статусом."""
-        result = self._call(
-            "getInvoices",
-            status=status,
-            offset=offset,
-            count=count,
-        )
-        if result is None:
-            return []
-        return result.get("items", [])
+    def get_invoices(self, status: str = "paid",
+                     offset: int = 0, count: int = 100) -> list:
+        result = self._call("getInvoices", status=status,
+                            offset=offset, count=count)
+        return (result or {}).get("items", [])
 
-    def create_check(
-        self,
-        asset: str,
-        amount: float,
-    ) -> Optional[dict]:
-        """
-        Создаёт чек (check) — пользователь получает ссылку и активирует его.
-        Возвращает dict с полями check_id, bot_check_url и др.
-        """
+    def create_check(self, asset: str, amount: float) -> Optional[dict]:
         return self._call(
             "createCheck",
             asset=asset,
@@ -139,30 +103,67 @@ class CryptoPayClient:
         )
 
     def get_balance(self) -> list:
-        """Возвращает список балансов кошелька приложения."""
-        result = self._call("getBalance")
-        return result if result else []
+        return self._call("getBalance") or []
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Состояния FSM (простой in-memory словарь)
+#  FSM — состояния пользователей
+#  Храним: step, chat_id, message_id (сообщение которое будем редактировать)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# {uid: {"step": "deposit_amount" | "withdraw_amount", ...}}
-_states: dict = {}
+_states: dict = {}    # {uid: {step, chat_id, message_id, ...}}
 _states_lock  = threading.Lock()
 
-def _set_state(uid: int, step: str, **extra):
+
+def _set_state(uid: int, step: str, chat_id: int = 0,
+               message_id: int = 0, **extra):
     with _states_lock:
-        _states[uid] = {"step": step, **extra}
+        _states[uid] = {
+            "step":       step,
+            "chat_id":    chat_id,
+            "message_id": message_id,
+            **extra,
+        }
+
 
 def _get_state(uid: int) -> Optional[dict]:
     with _states_lock:
         return _states.get(uid)
 
+
 def _clear_state(uid: int):
     with _states_lock:
         _states.pop(uid, None)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  КЛАВИАТУРЫ
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _kb_cancel_input() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="pay_cancel"))
+    return kb
+
+
+def _kb_pay(pay_url: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("💳 Оплатить через CryptoBot", url=pay_url))
+    kb.add(InlineKeyboardButton("❌ Отменить счёт", callback_data="pay_cancel"))
+    return kb
+
+
+def _kb_check(check_url: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("💸 Получить чек в CryptoBot", url=check_url))
+    kb.add(InlineKeyboardButton("◀️ Назад в профиль", callback_data="profile"))
+    return kb
+
+
+def _kb_back_profile() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("◀️ Назад в профиль", callback_data="profile"))
+    return kb
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -173,29 +174,39 @@ def _t_deposit_ask() -> str:
     return (
         f"💳 <b>Пополнение баланса</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Введите сумму пополнения в <b>USDT</b>:\n\n"
+        f"Введите сумму пополнения в <b>{DEFAULT_ASSET}</b>:\n\n"
         f"• Минимум: <b>${DEPOSIT_MIN:,.2f}</b>\n"
         f"• Максимум: <b>${DEPOSIT_MAX:,.0f}</b>\n\n"
-        f"Пример: <code>50</code> или <code>100.50</code>"
+        f"✏️ Напишите сумму в чат.\n"
+        f"Пример: <code>10</code> или <code>0.50</code>"
     )
 
 
-def _t_deposit_created(amount: float, pay_url: str) -> str:
+def _t_deposit_invoice(amount: float) -> str:
     return (
         f"💳 <b>Счёт создан!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n\n"
+        f"💰 Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
+        f"⏳ Срок действия: <b>5 минут</b>\n\n"
         f"Нажмите кнопку ниже и оплатите счёт через @CryptoBot.\n"
-        f"После оплаты баланс зачислится <b>автоматически</b> в течение {POLL_INTERVAL} сек."
+        f"После оплаты баланс зачислится <b>автоматически</b> за {POLL_INTERVAL} сек."
     )
 
 
-def _t_deposit_success(amount: float) -> str:
+def _t_deposit_success(amount: float, new_balance: float) -> str:
     return (
         f"✅ <b>Пополнение прошло!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n"
-        f"💎 Проверь баланс: /start → Профиль"
+        f"💎 Ваш баланс: <b>${new_balance:,.2f}</b>"
+    )
+
+
+def _t_deposit_expired() -> str:
+    return (
+        f"⌛ <b>Счёт истёк!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Время оплаты (5 мин) вышло. Создайте новый счёт."
     )
 
 
@@ -204,26 +215,21 @@ def _t_withdraw_ask(balance: float) -> str:
         f"📤 <b>Вывод средств</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💎 Ваш баланс: <b>${balance:,.2f}</b>\n\n"
-        f"Введите сумму вывода в <b>USDT</b>:\n\n"
+        f"Введите сумму вывода в <b>{DEFAULT_ASSET}</b>:\n\n"
         f"• Минимум: <b>${WITHDRAW_MIN:,.2f}</b>\n"
         f"• Максимум: <b>${WITHDRAW_MAX:,.0f}</b>\n\n"
-        f"Пример: <code>50</code> или <code>100.50</code>"
+        f"✏️ Напишите сумму в чат.\n"
+        f"Пример: <code>10</code> или <code>0.50</code>"
     )
 
 
-def _t_withdraw_processing() -> str:
-    return (
-        f"⏳ <b>Создаём чек...</b>\n"
-        f"Пожалуйста подождите несколько секунд."
-    )
-
-
-def _t_withdraw_done(amount: float, check_url: str) -> str:
+def _t_withdraw_done(amount: float) -> str:
     return (
         f"✅ <b>Чек создан!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💸 Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n\n"
-        f"Перейдите по ссылке ниже чтобы активировать чек в @CryptoBot:"
+        f"Нажмите кнопку ниже чтобы активировать чек в @CryptoBot.\n"
+        f"<i>Чек одноразовый — не передавайте ссылку третьим лицам.</i>"
     )
 
 
@@ -231,36 +237,34 @@ def _t_withdraw_failed() -> str:
     return (
         f"❌ <b>Ошибка вывода!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Не удалось создать чек. Средства возвращены на ваш баланс.\n"
+        f"Не удалось создать чек. Средства возвращены на баланс.\n"
         f"Попробуйте позже или обратитесь в поддержку."
     )
 
 
-def _kb_pay(pay_url: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("💳 Оплатить через CryptoBot", url=pay_url))
-    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="pay_cancel"))
-    return kb
+# ══════════════════════════════════════════════════════════════════════════════
+#  ВСПОМОГАТЕЛЬНАЯ: безопасное редактирование
+# ══════════════════════════════════════════════════════════════════════════════
 
-
-def _kb_check(check_url: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("💸 Получить чек", url=check_url))
-    return kb
-
-
-def _kb_cancel() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="pay_cancel"))
-    return kb
+def _edit(bot: telebot.TeleBot, chat_id: int, message_id: int,
+          text: str, markup=None):
+    try:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+    except Exception as e:
+        logger.debug("edit_message_text failed: %s", e)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ФОНОВЫЙ ПОЛЛИНГ оплаченных инвойсов
+#  ФОНОВЫЙ ПОЛЛИНГ (каждые POLL_INTERVAL секунд)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _start_poll_loop(bot: telebot.TeleBot, client: CryptoPayClient):
-    """Запускает фоновый поток, который каждые POLL_INTERVAL сек проверяет оплаченные счета."""
     def loop():
         logger.info("CryptoPay poll loop started (interval=%ds)", POLL_INTERVAL)
         while True:
@@ -275,146 +279,155 @@ def _start_poll_loop(bot: telebot.TeleBot, client: CryptoPayClient):
 
 
 def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
-    """
-    Получает последние 100 оплаченных инвойсов и обрабатывает те,
-    которые есть в нашей БД и ещё pending.
-    """
-    paid_invoices = client.get_invoices(status="paid", count=100)
-    for inv in paid_invoices:
+    paid = client.get_invoices(status="paid", count=100)
+    for inv in paid:
         invoice_id = int(inv["invoice_id"])
         row = db.deposit_get_by_invoice(invoice_id)
-        if not row:
-            continue  # не наш инвойс
-        if row["status"] != "pending":
-            continue  # уже обработан
+        if not row or row["status"] != "pending":
+            continue
 
-        # Атомарно переводим в статус paid
-        changed = db.deposit_confirm(invoice_id)
-        if not changed:
-            continue  # другой поток уже обработал
+        # Атомарная смена статуса — защита от двойного зачисления
+        if not db.deposit_confirm(invoice_id):
+            continue
 
         uid    = row["uid"]
         amount = row["amount"]
         db.add_balance(uid, amount)
+        new_balance = db.get_balance(uid)
 
-        try:
-            bot.send_message(uid, _t_deposit_success(amount), parse_mode="HTML")
-        except Exception:
-            pass  # пользователь заблокировал бота
+        # Если пользователь всё ещё смотрит на сообщение с инвойсом — редактируем его
+        state = _get_state(uid)
+        if state and state.get("step") == "deposit_waiting" \
+                and state.get("invoice_id") == invoice_id:
+            _edit(
+                bot,
+                state["chat_id"],
+                state["message_id"],
+                _t_deposit_success(amount, new_balance),
+                _kb_back_profile(),
+            )
+            _clear_state(uid)
+        else:
+            # FSM уже сброшен (например, истёк счёт) — шлём отдельным сообщением
+            try:
+                bot.send_message(
+                    uid,
+                    _t_deposit_success(amount, new_balance),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  РЕГИСТРАЦИЯ
+#  ПУБЛИЧНЫЙ API — вызывается из main.py
+# ══════════════════════════════════════════════════════════════════════════════
+
+def open_deposit(bot: telebot.TeleBot, uid: int,
+                 chat_id: int, message_id: int):
+    """Открывает экран пополнения редактированием сообщения."""
+    _set_state(uid, "deposit_amount", chat_id=chat_id, message_id=message_id)
+    _edit(bot, chat_id, message_id, _t_deposit_ask(), _kb_cancel_input())
+
+
+def open_withdraw(bot: telebot.TeleBot, uid: int,
+                  chat_id: int, message_id: int):
+    """Открывает экран вывода редактированием сообщения."""
+    balance = db.get_balance(uid)
+    _set_state(uid, "withdraw_amount", chat_id=chat_id, message_id=message_id)
+    _edit(bot, chat_id, message_id, _t_withdraw_ask(balance), _kb_cancel_input())
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  РЕГИСТРАЦИЯ ХЕНДЛЕРОВ
 # ══════════════════════════════════════════════════════════════════════════════
 
 def register(bot: telebot.TeleBot):
     client = CryptoPayClient(CRYPTO_PAY_TOKEN, CRYPTO_PAY_URL)
 
-    # Проверяем токен при старте
     me = client.get_me()
     if me:
         logger.info("CryptoPay connected: %s", me.get("name", "?"))
     else:
         logger.warning("CryptoPay token invalid or network error!")
 
-    # Запускаем фоновый поллинг
     _start_poll_loop(bot, client)
 
-    # ── Хелпер: только ЛС ──────────────────────────────────────────────────
-
-    def _require_private(message: Message) -> bool:
-        if message.chat.type != "private":
-            bot.reply_to(
-                message,
-                "💳 Пополнение и вывод доступны только в личных сообщениях с ботом.",
-            )
-            return False
-        return True
-
-    # ═══════════════════════════════════════════════════════════════════════
-    #  /deposit — начать пополнение
-    # ═══════════════════════════════════════════════════════════════════════
-
-    @bot.message_handler(commands=["deposit"])
-    def cmd_deposit(message: Message):
-        if not _require_private(message):
-            return
-        uid = message.from_user.id
-        db.ensure_user(uid, message.from_user.username or "",
-                       f"{message.from_user.first_name or ''} {message.from_user.last_name or ''}".strip())
-        _set_state(uid, "deposit_amount")
-        bot.send_message(uid, _t_deposit_ask(), parse_mode="HTML", reply_markup=_kb_cancel())
-
-    # ═══════════════════════════════════════════════════════════════════════
-    #  /withdraw — начать вывод
-    # ═══════════════════════════════════════════════════════════════════════
-
-    @bot.message_handler(commands=["withdraw"])
-    def cmd_withdraw(message: Message):
-        if not _require_private(message):
-            return
-        uid     = message.from_user.id
-        db.ensure_user(uid, message.from_user.username or "",
-                       f"{message.from_user.first_name or ''} {message.from_user.last_name or ''}".strip())
-        balance = db.get_balance(uid)
-        _set_state(uid, "withdraw_amount")
-        bot.send_message(uid, _t_withdraw_ask(balance), parse_mode="HTML", reply_markup=_kb_cancel())
-
-    # ═══════════════════════════════════════════════════════════════════════
-    #  Отмена через кнопку
-    # ═══════════════════════════════════════════════════════════════════════
+    # ── Отмена через кнопку ────────────────────────────────────────────────
 
     @bot.callback_query_handler(func=lambda call: call.data == "pay_cancel")
     def cb_pay_cancel(call):
-        uid = call.from_user.id
+        uid   = call.from_user.id
+        state = _get_state(uid)
         _clear_state(uid)
-        try:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-        except Exception:
-            pass
         bot.answer_callback_query(call.id, "Отменено.")
-        bot.send_message(uid, "❌ Операция отменена.")
 
-    # ═══════════════════════════════════════════════════════════════════════
-    #  Обработка ввода суммы (FSM)
-    # ═══════════════════════════════════════════════════════════════════════
+        if state:
+            # Возвращаем экран профиля в то же сообщение
+            import main as m
+            _edit(
+                bot,
+                state["chat_id"],
+                state["message_id"],
+                m.text_profile(call.from_user),
+                m.kb_profile(),
+            )
+
+    # ── Обработка ввода суммы (text FSM) ───────────────────────────────────
 
     @bot.message_handler(
-        func=lambda m: (
-            m.chat.type == "private"
-            and _get_state(m.from_user.id) is not None
+        func=lambda msg: (
+            _get_state(msg.from_user.id) is not None
+            and _get_state(msg.from_user.id).get("step")
+                in ("deposit_amount", "withdraw_amount")
         ),
         content_types=["text"],
     )
-    def handle_payment_input(message: Message):
+    def handle_amount_input(message: Message):
         uid   = message.from_user.id
         state = _get_state(uid)
-        if state is None:
+        if not state:
             return
 
-        step = state["step"]
+        step       = state["step"]
+        chat_id    = state["chat_id"]
+        message_id = state["message_id"]
 
-        # Парсим сумму
+        # Удаляем сообщение с суммой — не засоряем чат
         try:
-            amount = round(float(message.text.strip().replace(",", ".")), 2)
+            bot.delete_message(message.chat.id, message.message_id)
+        except Exception:
+            pass
+
+        # Парсим число
+        raw = message.text.strip().replace(",", ".")
+        try:
+            amount = round(float(raw), 2)
         except ValueError:
-            bot.send_message(uid, "❌ Введите корректное число. Например: <code>100</code>", parse_mode="HTML")
+            _edit(
+                bot, chat_id, message_id,
+                (f"❌ Введите число. Например: <code>10</code>\n\n"
+                 + (_t_deposit_ask() if step == "deposit_amount"
+                    else _t_withdraw_ask(db.get_balance(uid)))),
+                _kb_cancel_input(),
+            )
             return
 
-        # ── Пополнение ────────────────────────────────────────────────────
+        # ── ПОПОЛНЕНИЕ ────────────────────────────────────────────────────
 
         if step == "deposit_amount":
             if not (DEPOSIT_MIN <= amount <= DEPOSIT_MAX):
-                bot.send_message(
-                    uid,
-                    f"❌ Сумма должна быть от <b>${DEPOSIT_MIN:,.2f}</b> до <b>${DEPOSIT_MAX:,.0f}</b>.",
-                    parse_mode="HTML",
+                _edit(
+                    bot, chat_id, message_id,
+                    (f"❌ Сумма: от <b>${DEPOSIT_MIN:,.2f}</b> "
+                     f"до <b>${DEPOSIT_MAX:,.0f}</b>.\n\n"
+                     + _t_deposit_ask()),
+                    _kb_cancel_input(),
                 )
                 return
 
-            _clear_state(uid)
+            _edit(bot, chat_id, message_id, "⏳ <b>Создаём счёт...</b>", None)
 
-            # Создаём invoice в CryptoBot
             inv = client.create_invoice(
                 asset=DEFAULT_ASSET,
                 amount=amount,
@@ -424,90 +437,98 @@ def register(bot: telebot.TeleBot):
             )
 
             if not inv:
-                bot.send_message(uid, "❌ Ошибка создания счёта. Попробуйте позже.")
+                _edit(bot, chat_id, message_id,
+                      "❌ Ошибка создания счёта. Попробуйте позже.",
+                      _kb_back_profile())
+                _clear_state(uid)
                 return
 
             invoice_id = int(inv["invoice_id"])
             pay_url    = inv["pay_url"]
 
-            # Сохраняем в БД (защита от дублей через UNIQUE invoice_id)
             dep_id = db.deposit_create(uid, invoice_id, amount, DEFAULT_ASSET)
             if dep_id is None:
-                # invoice_id уже есть — крайне маловероятно, но обрабатываем
-                bot.send_message(uid, "❌ Дублирующийся счёт. Обратитесь в поддержку.")
+                _edit(bot, chat_id, message_id,
+                      "❌ Дублирующийся счёт. Обратитесь в поддержку.",
+                      _kb_back_profile())
+                _clear_state(uid)
                 return
 
-            bot.send_message(
-                uid,
-                _t_deposit_created(amount, pay_url),
-                parse_mode="HTML",
-                reply_markup=_kb_pay(pay_url),
-            )
+            # FSM → ожидание оплаты
+            _set_state(uid, "deposit_waiting",
+                       chat_id=chat_id, message_id=message_id,
+                       invoice_id=invoice_id, amount=amount)
 
-        # ── Вывод ─────────────────────────────────────────────────────────
+            _edit(bot, chat_id, message_id,
+                  _t_deposit_invoice(amount), _kb_pay(pay_url))
+
+            # Таймер истечения: через INVOICE_EXPIRE_IN+2 сек показываем "истёк"
+            def _expire():
+                time.sleep(INVOICE_EXPIRE_IN + 2)
+                s = _get_state(uid)
+                if (s and s.get("step") == "deposit_waiting"
+                        and s.get("invoice_id") == invoice_id):
+                    db.deposit_expire(invoice_id)
+                    _edit(bot, chat_id, message_id,
+                          _t_deposit_expired(), _kb_back_profile())
+                    _clear_state(uid)
+
+            threading.Thread(target=_expire, daemon=True).start()
+
+        # ── ВЫВОД ─────────────────────────────────────────────────────────
 
         elif step == "withdraw_amount":
-            if not (WITHDRAW_MIN <= amount <= WITHDRAW_MAX):
-                bot.send_message(
-                    uid,
-                    f"❌ Сумма должна быть от <b>${WITHDRAW_MIN:,.2f}</b> до <b>${WITHDRAW_MAX:,.0f}</b>.",
-                    parse_mode="HTML",
-                )
-                return
-
             balance = db.get_balance(uid)
-            if balance < amount:
-                bot.send_message(
-                    uid,
-                    f"❌ Недостаточно средств!\n💎 Ваш баланс: <b>${balance:,.2f}</b>",
-                    parse_mode="HTML",
+
+            if not (WITHDRAW_MIN <= amount <= WITHDRAW_MAX):
+                _edit(
+                    bot, chat_id, message_id,
+                    (f"❌ Сумма: от <b>${WITHDRAW_MIN:,.2f}</b> "
+                     f"до <b>${WITHDRAW_MAX:,.0f}</b>.\n\n"
+                     + _t_withdraw_ask(balance)),
+                    _kb_cancel_input(),
                 )
                 return
 
-            # Проверяем нет ли уже активной заявки
-            if db.withdrawal_has_pending(uid):
-                bot.send_message(
-                    uid,
-                    "⏳ У вас уже есть заявка на вывод в обработке. Подождите.",
+            if balance < amount:
+                _edit(
+                    bot, chat_id, message_id,
+                    (f"❌ Недостаточно средств!\n"
+                     f"💎 Баланс: <b>${balance:,.2f}</b>\n\n"
+                     + _t_withdraw_ask(balance)),
+                    _kb_cancel_input(),
                 )
+                return
+
+            if db.withdrawal_has_pending(uid):
+                _edit(bot, chat_id, message_id,
+                      "⏳ Заявка уже в обработке. Подождите.",
+                      _kb_back_profile())
+                _clear_state(uid)
                 return
 
             _clear_state(uid)
+            _edit(bot, chat_id, message_id, "⏳ <b>Создаём чек...</b>", None)
 
-            # Атомарно списываем баланс + создаём заявку
+            # Атомарно: списать + создать заявку
             wid = db.withdrawal_create(uid, amount, DEFAULT_ASSET)
             if wid is None:
-                bot.send_message(uid, "❌ Недостаточно средств или ошибка базы данных.")
+                _edit(bot, chat_id, message_id,
+                      "❌ Недостаточно средств или ошибка базы данных.",
+                      _kb_back_profile())
                 return
 
-            proc_msg = bot.send_message(uid, _t_withdraw_processing(), parse_mode="HTML")
-
-            # Создаём чек в CryptoBot
             check = client.create_check(asset=DEFAULT_ASSET, amount=amount)
 
             if not check:
-                # Ошибка API — возвращаем деньги
-                db.withdrawal_set_failed(wid)
-                try:
-                    bot.delete_message(uid, proc_msg.message_id)
-                except Exception:
-                    pass
-                bot.send_message(uid, _t_withdraw_failed(), parse_mode="HTML")
+                db.withdrawal_set_failed(wid)   # возвращаем деньги
+                _edit(bot, chat_id, message_id,
+                      _t_withdraw_failed(), _kb_back_profile())
                 return
 
             check_id  = int(check["check_id"])
             check_url = check["bot_check_url"]
-
             db.withdrawal_set_check(wid, check_id, check_url)
 
-            try:
-                bot.delete_message(uid, proc_msg.message_id)
-            except Exception:
-                pass
-
-            bot.send_message(
-                uid,
-                _t_withdraw_done(amount, check_url),
-                parse_mode="HTML",
-                reply_markup=_kb_check(check_url),
-            )
+            _edit(bot, chat_id, message_id,
+                  _t_withdraw_done(amount), _kb_check(check_url))
