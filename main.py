@@ -377,8 +377,9 @@ def start_handler(message):
     bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=kb_main())
 
 
+# ── ИСПРАВЛЕНИЕ: убран duel_view: из исключений — теперь он обрабатывается здесь ──
 @bot.callback_query_handler(func=lambda call: not (
-    call.data.startswith("duel_join:") or call.data.startswith("duel_cancel:") or call.data.startswith("duel_view:")
+    call.data.startswith("duel_join:") or call.data.startswith("duel_cancel:")
 ))
 def callback_handler(call):
     chat_id = call.message.chat.id
@@ -406,39 +407,50 @@ def callback_handler(call):
 
     if data == "main_menu":
         edit(WELCOME_TEXT, kb_main())
+
     elif data == "profile":
         edit(text_profile(user), kb_profile())
+
     elif data == "active_games":
         games = db.game_get_active_lobby_all()
         edit(text_active_games(games), kb_active_games(games))
+
     elif data.startswith("duel_view:"):
         game_id = int(data.split(":")[1])
         g = db.game_get(game_id)
         if not g or g["state"] != "lobby":
+            games = db.game_get_active_lobby_all()
             edit(
                 f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>\n'
                 f'━━━━━━━━━━━━━━━━━━━━━\n'
                 f'❌ Эта дуэль уже недоступна.',
-                kb_back(),
+                kb_active_games(games),
             )
         else:
             edit(text_duel_view(g), kb_duel_view(game_id))
+
     elif data == "referrals":
         edit(text_referrals(user), kb_back())
+
     elif data in ("statistics", "stats_all"):
         edit(text_stats("all"), kb_stats("all"))
+
     elif data == "stats_day":
         edit(text_stats("day"), kb_stats("day"))
+
     elif data == "stats_week":
         edit(text_stats("week"), kb_stats("week"))
+
     elif data == "about":
         edit(text_about(), kb_about())
+
     elif data == "deposit":
         edit(
             f'<tg-emoji emoji-id="{EMOJI_DEPOSIT}">📥</tg-emoji> <b>Пополнение</b>\n\n'
             '🚧 Раздел в разработке...',
             kb_back(),
         )
+
     elif data == "withdraw":
         edit(
             f'<tg-emoji emoji-id="{EMOJI_WITHDRAW}">📤</tg-emoji> <b>Вывод</b>\n\n'
