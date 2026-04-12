@@ -56,6 +56,16 @@ CMD_RE = re.compile(
 
 PLAYER_ICON = '<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji>'
 
+# Премиум эмодзи для чисел 1-6 (результаты бросков)
+NUM_EMOJI = {
+    1: '<tg-emoji emoji-id="5382322671679708881">1️⃣</tg-emoji>',
+    2: '<tg-emoji emoji-id="5381990043642502553">2️⃣</tg-emoji>',
+    3: '<tg-emoji emoji-id="5381879959335738545">3️⃣</tg-emoji>',
+    4: '<tg-emoji emoji-id="5382054253403577563">4️⃣</tg-emoji>',
+    5: '<tg-emoji emoji-id="5390966190283694453">5️⃣</tg-emoji>',
+    6: '<tg-emoji emoji-id="5382132232829804982">6️⃣</tg-emoji>',
+}
+
 # Глобальный замок для операций с играми (предотвращает race condition)
 _lock = threading.Lock()
 
@@ -98,6 +108,13 @@ def _score_bar(pts: int, win_score: int) -> str:
     return "🟢" * pts + "⚪" * (win_score - pts)
 
 
+def _num_emoji(val) -> str:
+    """Возвращает премиум эмодзи для числа, или ⏳ если val is None."""
+    if val is None:
+        return "⏳"
+    return NUM_EMOJI.get(val, str(val))
+
+
 def _kb_lobby(game_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("➕ Присоединиться", callback_data=f"duel_join:{game_id}"))
@@ -138,9 +155,8 @@ def _t_x(g, p1_display: str, p2_display: str,
     ws = g["win_score"]
 
     def status(val):
-        if val is not None:
-            return f"<b>{val}</b>{e}"
-        return "⏳"
+        # Используем премиум эмодзи вместо простого числа
+        return _num_emoji(val)
 
     result_line = f"\n {last_round_result}\n\n" if last_round_result else "\n"
     return (
@@ -160,7 +176,8 @@ def _t_total(g, p1_display: str, p2_display: str,
     rounds = g["rounds"]
 
     def row(p_display: str, scores: list) -> str:
-        vals = " + ".join(str(v) for v in scores) if scores else "—"
+        # Используем премиум эмодзи для каждого числа в сумме
+        vals = " + ".join(_num_emoji(v) for v in scores) if scores else "—"
         s = sum(scores)
         done = len(scores)
         mark = " ✅" if done == rounds else f"  {done}/{rounds}"
@@ -196,7 +213,9 @@ def _t_finish(g, winner_display: Optional[str],
         )
     else:
         def row(p_d, scores):
-            return " + ".join(str(v) for v in scores) + f" = <b>{sum(scores)}</b>"
+            # Используем премиум эмодзи в итоговом сообщении
+            vals = " + ".join(_num_emoji(v) for v in scores)
+            return f"{vals} = <b>{sum(scores)}</b>"
         detail = (
             f"{PLAYER_ICON} {p1_display}: {row(p1_display, p1_scores)}\n"
             f"{PLAYER_ICON} {p2_display}: {row(p2_display, p2_scores)}"
@@ -364,23 +383,26 @@ def register(bot: telebot.TeleBot):
             rnd_num = len(db.player_get_scores(game_id, p1_uid))
 
             p1_d, p2_d = _load_displays(g)
+
+            # Используем премиум эмодзи в строке результата раунда
+            e1 = _num_emoji(v1)
+            e2 = _num_emoji(v2)
+
             if v1 > v2:
                 db.player_add_point(game_id, p1_uid)
                 p1_pts += 1
                 lrr = (
-                    f"Раунд {rnd_num}:({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
-                    f"({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
+                    f"Раунд {rnd_num}: {e1} vs {e2} — счёт {p1_pts}:{p2_pts}"
                 )
             elif v2 > v1:
                 db.player_add_point(game_id, p2_uid)
                 p2_pts += 1
                 lrr = (
-                    f"Раунд {rnd_num}:({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
-                    f"({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
+                    f"Раунд {rnd_num}: {e2} vs {e1} — счёт {p1_pts}:{p2_pts}"
                 )
             else:
                 lrr = (
-                    f"Раунд {rnd_num}: ничья ({v1}={v2}) — "
+                    f"Раунд {rnd_num}: ничья {e1}={e2} — "
                     f"счёт прежний {p1_pts}:{p2_pts}"
                 )
 
