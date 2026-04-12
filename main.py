@@ -6,17 +6,9 @@ import duels
 import payments
 
 BOT_TOKEN = "8796618330:AAHLie3NBXmDR5FqUiFhvwBtghU9aA5Vor0"
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  ADMINS
-# ══════════════════════════════════════════════════════════════════════════════
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")                                                                            
 
 ADMINS = {8118184388}
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  EMOJI IDs
-# ══════════════════════════════════════════════════════════════════════════════
 
 EMOJI_PROFILE    = "5260399854500191689"
 EMOJI_GAMES      = "6039496266180726678"
@@ -44,11 +36,7 @@ EMOJI_EARNED     = "5890848474563352982"
 EMOJI_CHAT       = "5258215846450305872"
 EMOJI_SUPPORT    = "5357069174512303778"
 EMOJI_NEWS       = "5258185631355378853"
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
+                                                                          
 DICE_EMOJI = {
     "cub":    "🎲",
     "dart":   "🎯",
@@ -57,7 +45,7 @@ DICE_EMOJI = {
     "foot":   "⚽",
 }
 
-BOT_USERNAME = "TEST_ADVdbot"   # ← замени на реальный юзернейм бота
+BOT_USERNAME = "TEST_ADVdbot"                                       
 
 
 def btn(text: str, callback_data: str, emoji_id: str = "") -> InlineKeyboardButton:
@@ -73,9 +61,9 @@ def url_btn(text: str, url: str, emoji_id: str = "") -> InlineKeyboardButton:
         b.icon_custom_emoji_id = emoji_id
     return b
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  KEYBOARDS
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+            
+                                                                                
 
 def kb_main() -> InlineKeyboardMarkup:
     m = InlineKeyboardMarkup()
@@ -149,9 +137,9 @@ def kb_duel_view(game_id: int) -> InlineKeyboardMarkup:
     m.row(btn("Назад", "active_games", EMOJI_BACK))
     return m
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  TEXT BUILDERS
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                
+                                                                                
 
 def text_profile(user) -> str:
     uid      = user.id
@@ -244,9 +232,9 @@ def text_duel_view(g) -> str:
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ADMIN — /add  /sub
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                     
+                                                                                
 
 def _resolve_target(target_raw: str):
     if target_raw.startswith("@"):
@@ -395,9 +383,9 @@ def cmd_sub(message):
             f'уведомление не отправлено.',
         )
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  HANDLERS
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+           
+                                                                                
 
 WELCOME_TEXT = (
     '<tg-emoji emoji-id="5258501105293205250">👤</tg-emoji>'
@@ -411,11 +399,6 @@ WELCOME_TEXT = (
 
 
 def _parse_ref_from_start(text: str):
-    """
-    Парсит реферальный uid из параметра /start.
-    /start ref123456789  →  123456789 (int)
-    /start               →  None
-    """
     parts = (text or "").strip().split(maxsplit=1)
     if len(parts) < 2:
         return None
@@ -437,29 +420,29 @@ def start_handler(message):
         f"{message.from_user.last_name or ''}"
     ).strip()
 
-    # Определяем реферера до записи в БД
+                                        
     ref_uid = _parse_ref_from_start(message.text)
 
-    # Защита: нельзя быть своим рефералом
+                                         
     if ref_uid == uid:
         ref_uid = None
 
-    # Защита: реферер должен существовать в БД
+                                              
     if ref_uid is not None and db.is_new_user(ref_uid):
-        ref_uid = None  # Реферер не зарегистрирован — игнорируем
+        ref_uid = None                                           
 
-    # Защита: ref_by записывается ТОЛЬКО при первой регистрации (ON CONFLICT DO UPDATE
-    # не трогает ref_by — логика внутри ensure_user)
+                                                                                      
+                                                    
     is_new = db.is_new_user(uid)
     db.ensure_user(uid, username, first_name, ref_by=ref_uid if is_new else None)
 
-    # Уведомить реферера если это новый пользователь
+                                                    
     if is_new and ref_uid is not None:
         try:
             ref_row = db.get_user_row(ref_uid)
             ref_invited, _ = db.get_referral_stats(ref_uid)
-            # ref_count обновляется в referral_try_reward при первом выигрыше —
-            # здесь шлём просто уведомление о регистрации реферала
+                                                                               
+                                                                  
             bot.send_message(
                 ref_uid,
                 f'<tg-emoji emoji-id="6039496266180726678">👤</tg-emoji><b>Новый реферал!</b>\n',
@@ -471,7 +454,7 @@ def start_handler(message):
     bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=kb_main())
 
 
-# ── Главный callback_handler ─────────────────────────────────────────────────
+                                                                               
 
 @bot.callback_query_handler(func=lambda call: call.data not in ("pay_cancel",)
     and not call.data.startswith("duel_join:")
@@ -548,9 +531,9 @@ def callback_handler(call):
         payments.open_withdraw(bot, user.id, chat_id, msg_id)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  RUN
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+      
+                                                                                
 
 if __name__ == "__main__":
     import logging
