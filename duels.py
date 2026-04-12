@@ -63,20 +63,22 @@ class Player:
 
 @dataclass
 class Game:
-    chat_id:      int
-    game_type:    str
-    mode:         str
-    rounds:       int
-    bet:          float
-    player1:      Player
-    player2:      Optional[Player] = None
-    lobby_msg:    int = 0
-    game_msg:     int = 0
+    chat_id:           int
+    game_type:         str
+    mode:              str
+    rounds:            int
+    bet:               float
+    player1:           Player
+    player2:           Optional[Player] = None
+    lobby_msg:         int = 0
+    game_msg:          int = 0
     # lobby | playing | finished
-    state:        str = "lobby"
+    state:             str = "lobby"
     # x-режим: броски текущего раунда (None = ещё не бросил)
-    p1_round_val: Optional[int] = None
-    p2_round_val: Optional[int] = None
+    p1_round_val:      Optional[int] = None
+    p2_round_val:      Optional[int] = None
+    # Комментарий итога последнего раунда
+    last_round_result: str = ""
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ХРАНИЛИЩЕ
@@ -153,8 +155,9 @@ def _t_lobby(g: Game) -> str:
 
 def _t_x(g: Game) -> str:
     """
-    Свободный режим: оба бросают в любом порядке.
+    Очковый режим: оба бросают в любом порядке.
     Раунд завершается когда оба бросили — сравниваем значения.
+    Показывает итог предыдущего раунда (ничья / кто выиграл броск).
     """
     e = DICE_EMOJI[g.game_type]
     p1, p2 = g.player1, g.player2
@@ -165,12 +168,16 @@ def _t_x(g: Game) -> str:
             return f"✅ бросил <b>{val}</b>"
         return f"⏳ ждём броска"
 
+    # Блок с комментарием прошлого раунда (пустой в первом раунде)
+    result_line = f"\n💬 {g.last_round_result}\n\n" if g.last_round_result else "\n"
+
     return (
         f"{e} <b>Раунд {rnd}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"🔴 {p1.display}  {_score_bar(p1.points)}  {status(p1, g.p1_round_val)}\n"
         f"🔵 {p2.display}  {_score_bar(p2.points)}  {status(p2, g.p2_round_val)}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━━━━━━"
+        f"{result_line}"
         f"Оба бросайте в любом порядке — ответьте на это сообщение эмодзи {e}"
     )
 
@@ -288,9 +295,10 @@ def register(bot: telebot.TeleBot):
         _del(g.chat_id)
 
     # ──────────────────────────────────────────────────────────────────────
-    #  X-режим: строгая очерёдность p1 → p2 → p1 → ...
-    #  p1_round_val is None  → ждём броска p1
-    #  p1_round_val is not None → p1 бросил, ждём p2
+    #  X-режим: оба бросают в любом порядке, раунд закрывается когда оба
+    #  бросили. После каждого раунда показывается итоговый комментарий:
+    #    • кто выиграл бросок и новый счёт
+    #    • или «ничья — счёт прежний» если значения равны
     # ──────────────────────────────────────────────────────────────────────
 
     def _handle_x(g: Game, uid: int, val: int):
@@ -310,21 +318,40 @@ def register(bot: telebot.TeleBot):
             g.p2_round_val = None
             p1.scores.append(v1)
             p2.scores.append(v2)
+            rnd_num = len(p1.scores)  # номер только что завершённого раунда
+
+            # ── Определяем победителя раунда и формируем комментарий ──────
             if v1 > v2:
                 p1.points += 1
+                g.last_round_result = (
+                    f"Раунд {rnd_num}: {p1.display} выиграл бросок "
+                    f"({v1} vs {v2}) — счёт {p1.points}:{p2.points} 🔴"
+                )
             elif v2 > v1:
                 p2.points += 1
+                g.last_round_result = (
+                    f"Раунд {rnd_num}: {p2.display} выиграл бросок "
+                    f"({v2} vs {v1}) — счёт {p1.points}:{p2.points} 🔵"
+                )
+            else:
+                # Ничья в раунде — очки не меняются, счёт прежний
+                g.last_round_result = (
+                    f"Раунд {rnd_num}: ничья ({v1} = {v2}) — "
+                    f"счёт прежний {p1.points}:{p2.points} 🤝"
+                )
+            # ─────────────────────────────────────────────────────────────
+
             if p1.points >= WIN_SCORE:
                 end_game(g, winner=p1)
             elif p2.points >= WIN_SCORE:
                 end_game(g, winner=p2)
             else:
-                # Удаляем сообщение прошлого раунда, шлём новое
+                # Удаляем сообщение прошлого раунда, шлём новое с комментарием
                 safe_del(g.chat_id, g.game_msg)
                 sent = bot.send_message(g.chat_id, _t_x(g), parse_mode="HTML")
                 g.game_msg = sent.message_id
         else:
-            # Один уже бросил — обновляем статус в текущем сообщении
+            # Один уже бросил — обновляем статус ожидания в текущем сообщении
             edit_game(g, _t_x(g))
 
     # ──────────────────────────────────────────────────────────────────────
