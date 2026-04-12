@@ -46,7 +46,6 @@ DICE_EMOJI = {
     "foot":   "⚽",
 }
 
-# Эмодзи → тип игры (для фильтрации входящих dice)
 EMOJI_TO_TYPE = {v: k for k, v in DICE_EMOJI.items()}
 
 CMD_RE = re.compile(
@@ -56,7 +55,6 @@ CMD_RE = re.compile(
 
 PLAYER_ICON = '<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji>'
 
-# Премиум эмодзи для чисел 1-6 (только для отображения броска в x-режиме)
 NUM_EMOJI = {
     1: '<tg-emoji emoji-id="5382322671679708881">1️⃣</tg-emoji>',
     2: '<tg-emoji emoji-id="5381990043642502553">2️⃣</tg-emoji>',
@@ -66,7 +64,6 @@ NUM_EMOJI = {
     6: '<tg-emoji emoji-id="5390966190283694453">6️⃣</tg-emoji>',
 }
 
-# Глобальный замок для операций с играми (предотвращает race condition)
 _lock = threading.Lock()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -121,16 +118,10 @@ def _kb_cancel_lobby(game_id: int) -> InlineKeyboardMarkup:
 
 
 def _build_game_url(sent_msg) -> str:
-    """Строит прямую ссылку на сообщение с игрой в чате."""
     chat_id = sent_msg.chat.id
     msg_id  = sent_msg.message_id
-
-    # Публичный чат — есть username
     if sent_msg.chat.username:
         return f"https://t.me/{sent_msg.chat.username}/{msg_id}"
-
-    # Приватная супергруппа: chat_id вида -1001234567890
-    # Убираем минус и первые три символа «100»
     clean_id = str(abs(chat_id))
     if clean_id.startswith("100"):
         clean_id = clean_id[3:]
@@ -304,7 +295,6 @@ def register(bot: telebot.TeleBot):
             pass
 
     def _load_displays(g) -> tuple:
-        """Возвращает (p1_display, p2_display)."""
         p1_un = db.get_username_by_uid(g["p1_uid"]) or ""
         p1_row = db.get_user_row(g["p1_uid"])
         p1_name = p1_row["first_name"] if p1_row else str(g["p1_uid"])
@@ -320,38 +310,57 @@ def register(bot: telebot.TeleBot):
         return p1_d, p2_d
 
     def _notify_joined(g, joiner_uid: int, p1_d: str, p2_d: str, sent_msg):
-        """
-        Отправляет присоединившемуся игроку (p2) в ЛС уведомление
-        с кнопкой-ссылкой на игровое сообщение в чате.
-        """
         e = DICE_EMOJI.get(g["game_type"], "🎲")
         game_url = _build_game_url(sent_msg)
-
         mode_lbl = (
             f"до {g['win_score']} очков" if g["mode"] == "x"
             else f"{g['rounds']} бросков • сумма"
         )
-
         text = (
             f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
-            f'<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:    <b>${g['bet']:,.2f}</b>\n'
+            f'<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:    <b>${g["bet"]:,.2f}</b>\n'
             f" <b>{mode_lbl}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
         )
-
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("Ваша игра", url=game_url))
-
         try:
             bot.send_message(joiner_uid, text, parse_mode="HTML", reply_markup=kb)
         except Exception:
-            # Пользователь не начал диалог с ботом — молча пропускаем
+            pass
+
+    def _notify_referrer(ref_uid: int, winner_display: str,
+                         reward: float, game_id: int):
+        """
+        Уведомляет реферера о начислении вознаграждения.
+        Вызывается только если referral_try_reward вернул не None.
+        """
+        try:
+            new_balance = db.get_balance(ref_uid)
+            bot.send_message(
+                ref_uid,
+                f'💰 <b>Реферальное начисление!</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━━\n'
+                f'👤 Ваш реферал <b>{winner_display}</b> выиграл дуэль.\n'
+                f'➕ Начислено: <b>+${reward:,.2f}</b>\n'
+                f'💎 Ваш баланс: <b>${new_balance:,.2f}</b>',
+                parse_mode="HTML",
+            )
+        except Exception:
             pass
 
     def _end_game(g, winner_uid: Optional[int] = None, draw=False):
-        """Завершает игру: обновляет БД, баланс, отправляет итог."""
+        """
+        Завершает игру: обновляет БД, баланс, реферальная награда, итог.
+
+        Реферальная логика:
+          • Только если есть победитель (не ничья)
+          • referral_try_reward() атомарно проверяет уникальность по
+            UNIQUE(game_id, ref_uid) — дюпов быть не может даже при race condition
+          • При ничье ставки возвращаются, реферал не начисляется
+        """
         game_id = g["id"]
         bet = g["bet"]
 
@@ -371,8 +380,15 @@ def register(bot: telebot.TeleBot):
             db.add_balance(p2_uid, bet)
             winner_d = None
         else:
-            db.add_balance(winner_uid, bet * 2)
+            win_amount = bet * 2
+            db.add_balance(winner_uid, win_amount)
             winner_d = p1_d if winner_uid == p1_uid else p2_d
+
+            # ── Реферальное начисление (защита от дюпов внутри БД) ──────────
+            ref_result = db.referral_try_reward(game_id, winner_uid, win_amount)
+            if ref_result is not None:
+                ref_uid, reward = ref_result
+                _notify_referrer(ref_uid, winner_d, reward, game_id)
 
         db.add_turnover(p1_uid, bet)
         db.add_turnover(p2_uid, bet)
@@ -506,8 +522,6 @@ def register(bot: telebot.TeleBot):
     #  ХЕНДЛЕРЫ
     # ═══════════════════════════════════════════════════════════════════════
 
-    # ── Создание дуэли ──────────────────────────────────────────────────────
-
     @bot.message_handler(func=is_duel_command)
     def cmd_create(message: Message):
         parsed = _parse_cmd(message.text)
@@ -580,7 +594,7 @@ def register(bot: telebot.TeleBot):
         )
         db.game_set_lobby_msg(game_id, sent.message_id)
 
-    # ── Вступление в дуэль через inline-кнопку ──────────────────────────────
+    # ── Вступление ──────────────────────────────────────────────────────────
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("duel_join:"))
     def cb_join(call):
@@ -634,14 +648,12 @@ def register(bot: telebot.TeleBot):
         else:
             text = _t_total(g, p1_d, p2_d, [], [])
 
-        # Отправляем игровое сообщение в чат
         sent = bot.send_message(g["chat_id"], text, parse_mode="HTML")
         db.game_set_game_msg(game_id, sent.message_id)
 
-        # Уведомляем присоединившегося (p2) в ЛС со ссылкой на игру
         _notify_joined(g, uid, p1_d, p2_d, sent)
 
-    # ── /del — удалить дуэль реплаем ────────────────────────────────────────
+    # ── /del ────────────────────────────────────────────────────────────────
 
     @bot.message_handler(commands=["del"])
     def cmd_del(message: Message):
@@ -681,7 +693,7 @@ def register(bot: telebot.TeleBot):
         safe_del(chat_id, target["lobby_msg"])
         bot.send_message(chat_id, f"❌ Дуэль удалена. Ставка возвращена!", parse_mode="HTML")
 
-    # ── /delall — удалить все свои lobby-дуэли ──────────────────────────────
+    # ── /delall ─────────────────────────────────────────────────────────────
 
     @bot.message_handler(commands=["delall"])
     def cmd_delall(message: Message):
@@ -702,7 +714,7 @@ def register(bot: telebot.TeleBot):
             f"✅ Удалено {len(lobby_games)} дуэль(ей). Ставки возвращены.",
         )
 
-    # ── /myg /mygames — список своих активных дуэлей ────────────────────────
+    # ── /myg /mygames ────────────────────────────────────────────────────────
 
     @bot.message_handler(commands=["myg", "mygames"])
     def cmd_myg(message: Message):
@@ -710,7 +722,7 @@ def register(bot: telebot.TeleBot):
         games = db.game_get_all_active_for_user(uid)
         bot.reply_to(message, _t_my_games(games), parse_mode="HTML")
 
-    # ── /cancelduel — отмена через команду ───────────────────────────────────
+    # ── /cancelduel ──────────────────────────────────────────────────────────
 
     @bot.message_handler(commands=["cancelduel"])
     def cmd_cancel(message: Message):
@@ -735,7 +747,7 @@ def register(bot: telebot.TeleBot):
         safe_del(chat_id, target["lobby_msg"])
         bot.send_message(chat_id, "❌ Дуэль отменена. Ставка возвращена.", parse_mode="HTML")
 
-    # ── Inline-кнопка отмены из lobby-сообщения ─────────────────────────────
+    # ── Inline-кнопка отмены ─────────────────────────────────────────────────
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("duel_cancel:"))
     def cb_cancel(call):
@@ -788,10 +800,7 @@ def register(bot: telebot.TeleBot):
             else:
                 _handle_total(g, uid, val)
 
-    # ── Активные игры для главного меню (используется из main.py) ───────────
-
     def get_all_lobby_games() -> list:
-        """Публичный API для main.py — все lobby-дуэли для кнопки 'Активные игры'."""
         return db.game_get_active_lobby_all()
 
     register.get_lobby_games = get_all_lobby_games
