@@ -227,60 +227,56 @@ def _t_deposit_invoice(amount: float) -> str:
     return (
         f"{E_WALLET} <b>Счёт создан!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{E_MONEY} Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
-        f"{E_CLOCK} Срок действия: <b>5 минут</b>\n\n"
-        f"{E_BOLT} Нажмите кнопку ниже и оплатите через @CryptoBot.\n"
-        f"После оплаты баланс зачислится <b>автоматически</b> за {POLL_INTERVAL} сек."
+        f"<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
+        f"<tg-emoji emoji-id="6030537810509828330">💎</tg-emoji> Срок действия: <b>5 минут</b>\n\n"
+        f"Нажмите кнопку ниже и оплатите через @CryptoBot.\n"
+        f"проверяется <b>автоматически</b> каждые {POLL_INTERVAL} сек."
     )
 
 
 def _t_deposit_success(amount: float, new_balance: float) -> str:
     return (
-        f"{E_FIRE} <b>Пополнение прошло успешно!</b>\n"
+        f"<tg-emoji emoji-id="5258185631355378853">💎</tg-emoji> <b>Успешное пополнение!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{E_MONEY} Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n"
-        f"{E_DIAMOND} Ваш баланс: <b>${new_balance:,.2f}</b>"
+        f"<tg-emoji emoji-id="5890848474563352982">💎</tg-emoji> Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n"
+        f"<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Ваш баланс: <b>${new_balance:,.2f}</b>"
     )
 
 
 def _t_deposit_expired() -> str:
     return (
-        f"{E_WARNING} <b>Счёт истёк!</b>\n"
+        f"<tg-emoji emoji-id="6030776052345737530">💎</tg-emoji> <b>Счёт истёк!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{E_CLOCK} Время оплаты (5 мин) вышло.\n"
+        f"Время оплаты (5 мин) истекло.\n"
         f"Создайте новый счёт и попробуйте снова."
     )
 
 
 def _t_withdraw_ask(balance: float) -> str:
     return (
-        f"{E_SEND} <b>Вывод средств</b>\n"
+        f'<tg-emoji emoji-id="5258043150110301407">💎</tg-emoji> <b>Вывод средств</b>\n'
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{E_DIAMOND} Ваш баланс: <b>${balance:,.2f}</b>\n\n"
-        f"{E_PAY} Введите сумму вывода в <b>{DEFAULT_ASSET}</b>:\n\n"
-        f"{E_BOLT} Минимум: <b>${WITHDRAW_MIN:,.2f}</b>\n"
-        f"{E_STAR} Максимум: <b>${WITHDRAW_MAX:,.0f}</b>\n\n"
-        f"✏️ Напишите сумму в чат.\n"
-        f"Пример: <code>10</code> или <code>0.50</code>"
+        f" Введите сумму вывода в <b>{DEFAULT_ASSET}</b>:\n\n"
+        f" Минимум: <b>${WITHDRAW_MIN:,.2f}</b>\n"
+        f" Максимум: <b>${WITHDRAW_MAX:,.0f}</b>\n"
     )
 
 
 def _t_withdraw_done(amount: float) -> str:
     return (
-        f"{E_FIRE} <b>Чек успешно создан!</b>\n"
+        f"<tg-emoji emoji-id="6030776052345737530">💎</tg-emoji> <b>Вывод обработан!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{E_PAY} Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n\n"
-        f"{E_LOCK} Нажмите кнопку ниже, чтобы активировать чек в @CryptoBot.\n"
-        f"<i>Чек одноразовый — не передавайте ссылку третьим лицам.</i>"
+        f"<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Сумма: <b>{amount:,.2f} {DEFAULT_ASSET}</b>\n"
+        f"<i>Чек одноразовый — не передавайте ссылку третьим лицам!</i>"
     )
 
 
 def _t_withdraw_failed() -> str:
     return (
-        f"{E_CROSS} <b>Ошибка вывода!</b>\n"
+        f'<tg-emoji emoji-id="6030776052345737530">💎</tg-emoji> <b>Ошибка вывода!</b>\n'
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{E_WARNING} Не удалось создать чек.\n"
-        f"{E_MONEY} Средства возвращены на баланс.\n"
+        f'<tg-emoji emoji-id="6030833407339008632">💎</tg-emoji> Не удалось создать чек.\n'
+        f"Средства возвращены на баланс.\n"
         f"Попробуйте позже или обратитесь в поддержку."
     )
 
@@ -441,7 +437,7 @@ def register(bot: telebot.TeleBot):
         except ValueError:
             _edit(
                 bot, chat_id, message_id,
-                (f"{E_CROSS} Введите корректное число. Например: <code>10</code>\n\n"
+                (f" Введите корректное число. Например: <code>10</code>\n\n"
                  + (_t_deposit_ask() if step == "deposit_amount"
                     else _t_withdraw_ask(db.get_balance(uid)))),
                 _kb_cancel_input(),
@@ -462,7 +458,7 @@ def register(bot: telebot.TeleBot):
                 return
 
             _edit(bot, chat_id, message_id,
-                  f"{E_CLOCK} <b>Создаём счёт...</b>", None)
+                  f'<tg-emoji emoji-id="5357069174512303778">💎</tg-emoji> <b>Создаём счёт...</b>', None)
 
             inv = client.create_invoice(
                 asset=DEFAULT_ASSET,
@@ -474,7 +470,7 @@ def register(bot: telebot.TeleBot):
 
             if not inv:
                 _edit(bot, chat_id, message_id,
-                      f"{E_CROSS} Ошибка создания счёта. Попробуйте позже.",
+                      f" Ошибка создания счёта. Попробуйте позже.",
                       _kb_back_profile())
                 _clear_state(uid)
                 return
@@ -485,7 +481,7 @@ def register(bot: telebot.TeleBot):
             dep_id = db.deposit_create(uid, invoice_id, amount, DEFAULT_ASSET)
             if dep_id is None:
                 _edit(bot, chat_id, message_id,
-                      f"{E_CROSS} Дублирующийся счёт. Обратитесь в поддержку.",
+                      f" Дублирующийся счёт. Обратитесь в поддержку.",
                       _kb_back_profile())
                 _clear_state(uid)
                 return
@@ -527,8 +523,8 @@ def register(bot: telebot.TeleBot):
             if balance < amount:
                 _edit(
                     bot, chat_id, message_id,
-                    (f"{E_CROSS} Недостаточно средств!\n"
-                     f"{E_DIAMOND} Баланс: <b>${balance:,.2f}</b>\n\n"
+                    (f'<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Недостаточно средств!\n'
+                     f'<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Баланс: <b>${balance:,.2f}</b>\n\n'
                      + _t_withdraw_ask(balance)),
                     _kb_cancel_input(),
                 )
@@ -543,12 +539,12 @@ def register(bot: telebot.TeleBot):
 
             _clear_state(uid)
             _edit(bot, chat_id, message_id,
-                  f"{E_CLOCK} <b>Создаём чек...</b>", None)
+                  f"<tg-emoji emoji-id="5357069174512303778">💎</tg-emoji> <b>Создаём чек...</b>", None)
 
             wid = db.withdrawal_create(uid, amount, DEFAULT_ASSET)
             if wid is None:
                 _edit(bot, chat_id, message_id,
-                      f"{E_CROSS} Недостаточно средств или ошибка базы данных.",
+                      f" Недостаточно средств или ошибка базы данных.",
                       _kb_back_profile())
                 return
 
