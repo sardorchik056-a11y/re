@@ -7,6 +7,7 @@ database.py — SQLite-хранилище (WAL-mode, thread-safe)
   game_players — данные каждого игрока в дуэли (очки, броски)
   deposits     — пополнения через CryptoBot (защита от дублей по invoice_id)
   withdrawals  — заявки на вывод через CryptoBot чек
+  referral_log — лог реферальных начислений (защита от дублей по game_id)
 """
 
 import json
@@ -92,32 +93,48 @@ def init_db():
         CREATE TABLE IF NOT EXISTS deposits (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             uid         INTEGER NOT NULL,
-            invoice_id  INTEGER NOT NULL UNIQUE,   -- CryptoBot invoice id
+            invoice_id  INTEGER NOT NULL UNIQUE,
             amount      REAL    NOT NULL,
             asset       TEXT    NOT NULL DEFAULT 'USDT',
-            status      TEXT    NOT NULL DEFAULT 'pending',  -- pending | paid | expired
+            status      TEXT    NOT NULL DEFAULT 'pending',
             created_at  INTEGER DEFAULT (strftime('%s','now')),
             paid_at     INTEGER DEFAULT NULL
         );
 
-        -- Выводы: чек создаётся ботом, храним check_id чтобы не создать дважды
+        -- Выводы
         CREATE TABLE IF NOT EXISTS withdrawals (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             uid         INTEGER NOT NULL,
             amount      REAL    NOT NULL,
             asset       TEXT    NOT NULL DEFAULT 'USDT',
-            check_id    INTEGER DEFAULT NULL,       -- CryptoBot check id после создания
-            check_url   TEXT    DEFAULT NULL,       -- ссылка на чек
-            status      TEXT    NOT NULL DEFAULT 'pending',  -- pending | sent | failed
+            check_id    INTEGER DEFAULT NULL,
+            check_url   TEXT    DEFAULT NULL,
+            status      TEXT    NOT NULL DEFAULT 'pending',
             created_at  INTEGER DEFAULT (strftime('%s','now')),
             sent_at     INTEGER DEFAULT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_games_chat ON games(chat_id, state);
-        CREATE INDEX IF NOT EXISTS idx_games_p1   ON games(p1_uid, state);
-        CREATE INDEX IF NOT EXISTS idx_games_p2   ON games(p2_uid, state);
-        CREATE INDEX IF NOT EXISTS idx_dep_uid    ON deposits(uid, status);
-        CREATE INDEX IF NOT EXISTS idx_wit_uid    ON withdrawals(uid, status);
+        -- Реферальный лог: game_id + ref_uid уникальны — защита от дублей
+        -- winner_uid  — кто выиграл (получил приз)
+        -- ref_uid     — реферер (кому начислен процент)
+        -- amount      — начисленная сумма рефереру
+        CREATE TABLE IF NOT EXISTS referral_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id     INTEGER NOT NULL,
+            winner_uid  INTEGER NOT NULL,
+            ref_uid     INTEGER NOT NULL,
+            amount      REAL    NOT NULL,
+            created_at  INTEGER DEFAULT (strftime('%s','now')),
+            UNIQUE(game_id, ref_uid)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_games_chat   ON games(chat_id, state);
+        CREATE INDEX IF NOT EXISTS idx_games_p1     ON games(p1_uid, state);
+        CREATE INDEX IF NOT EXISTS idx_games_p2     ON games(p2_uid, state);
+        CREATE INDEX IF NOT EXISTS idx_dep_uid      ON deposits(uid, status);
+        CREATE INDEX IF NOT EXISTS idx_wit_uid      ON withdrawals(uid, status);
+        CREATE INDEX IF NOT EXISTS idx_reflog_game  ON referral_log(game_id);
+        CREATE INDEX IF NOT EXISTS idx_reflog_ref   ON referral_log(ref_uid);
     """)
     con.commit()
 
@@ -126,16 +143,40 @@ def init_db():
 #  USERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def ensure_user(uid: int, username: str = "", first_name: str = ""):
-    _ex(
-        """INSERT INTO users(uid, username, first_name)
-           VALUES(?,?,?)
-           ON CONFLICT(uid) DO UPDATE SET
-               username   = excluded.username,
-               first_name = excluded.first_name
-        """,
-        (uid, username or "", first_name or ""),
-    )
+def ensure_user(uid: int, username: str = "", first_name: str = "",
+                ref_by: Optional[int] = None):
+    """
+    Регистрирует пользователя если его нет. ref_by записывается ТОЛЬКО
+    при первом создании строки (INSERT) — на UPDATE не влияет, дюпов нет.
+    """
+    con = _conn()
+    if ref_by is not None:
+        con.execute(
+            """INSERT INTO users(uid, username, first_name, ref_by)
+               VALUES(?,?,?,?)
+               ON CONFLICT(uid) DO UPDATE SET
+                   username   = excluded.username,
+                   first_name = excluded.first_name
+            """,
+            (uid, username or "", first_name or "", ref_by),
+        )
+    else:
+        con.execute(
+            """INSERT INTO users(uid, username, first_name)
+               VALUES(?,?,?)
+               ON CONFLICT(uid) DO UPDATE SET
+                   username   = excluded.username,
+                   first_name = excluded.first_name
+            """,
+            (uid, username or "", first_name or ""),
+        )
+    con.commit()
+
+
+def is_new_user(uid: int) -> bool:
+    """Возвращает True если пользователь ещё не зарегистрирован."""
+    row = _ex("SELECT uid FROM users WHERE uid=?", (uid,), fetch="one")
+    return row is None
 
 
 def get_balance(uid: int) -> float:
@@ -186,23 +227,20 @@ def resolve_username(username: str) -> Optional[int]:
     return row["uid"] if row else None
 
 
-def add_referral(ref_uid: int, amount_earned: float):
-    _ex(
-        """UPDATE users
-           SET ref_earned=ROUND(ref_earned+?,2),
-               ref_count=ref_count+1
-           WHERE uid=?""",
-        (amount_earned, ref_uid),
-    )
-
-
 def get_referral_stats(uid: int):
+    """Возвращает (ref_count, ref_earned) из таблицы users."""
     row = _ex(
         "SELECT ref_count, ref_earned FROM users WHERE uid=?",
         (uid,),
         fetch="one",
     )
     return (row["ref_count"], row["ref_earned"]) if row else (0, 0.0)
+
+
+def get_ref_by(uid: int) -> Optional[int]:
+    """Возвращает uid реферера или None."""
+    row = _ex("SELECT ref_by FROM users WHERE uid=?", (uid,), fetch="one")
+    return row["ref_by"] if row else None
 
 
 def get_stats(period: str = "all") -> dict:
@@ -237,14 +275,80 @@ def days_since_registration(uid: int) -> int:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  DEPOSITS (пополнения)
+#  REFERRALS
+# ══════════════════════════════════════════════════════════════════════════════
+
+REF_PERCENT = 0.01   # 1% от выигрыша победителя
+
+
+def referral_try_reward(game_id: int, winner_uid: int, win_amount: float) -> Optional[tuple]:
+    """
+    Пытается начислить реферальное вознаграждение рефереру победителя.
+
+    Защита от дублей: UNIQUE(game_id, ref_uid) в referral_log.
+    Если запись уже есть — ничего не делаем (INSERT OR IGNORE).
+
+    Возвращает (ref_uid, reward) если начисление прошло, иначе None.
+
+    win_amount — это ПОЛНЫЙ выигрыш победителя (bet * 2).
+    Реферер получает REF_PERCENT от этой суммы.
+    """
+    ref_uid = get_ref_by(winner_uid)
+    if ref_uid is None:
+        return None
+
+    reward = round(win_amount * REF_PERCENT, 2)
+    if reward <= 0:
+        return None
+
+    con = _conn()
+    try:
+        cur = con.execute(
+            """INSERT OR IGNORE INTO referral_log
+               (game_id, winner_uid, ref_uid, amount)
+               VALUES (?, ?, ?, ?)""",
+            (game_id, winner_uid, ref_uid, reward),
+        )
+        con.commit()
+        if cur.rowcount == 0:
+            # Уже было начислено (дюп) — ничего не делаем
+            return None
+    except Exception:
+        con.rollback()
+        return None
+
+    # Начисляем баланс и обновляем счётчики реферера
+    con.execute(
+        """UPDATE users
+           SET balance    = ROUND(balance + ?, 2),
+               ref_earned = ROUND(ref_earned + ?, 2),
+               ref_count  = ref_count + 1
+           WHERE uid = ?""",
+        (reward, reward, ref_uid),
+    )
+    con.commit()
+    return (ref_uid, reward)
+
+
+def referral_log_history(ref_uid: int, limit: int = 20) -> list:
+    """История начислений для конкретного реферера."""
+    return _ex(
+        """SELECT rl.*, u.username, u.first_name
+           FROM referral_log rl
+           LEFT JOIN users u ON u.uid = rl.winner_uid
+           WHERE rl.ref_uid = ?
+           ORDER BY rl.created_at DESC
+           LIMIT ?""",
+        (ref_uid, limit),
+        fetch="all",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DEPOSITS
 # ══════════════════════════════════════════════════════════════════════════════
 
 def deposit_create(uid: int, invoice_id: int, amount: float, asset: str) -> Optional[int]:
-    """
-    Создаёт запись о депозите. Возвращает id записи или None если invoice уже есть
-    (защита от дублей на уровне БД через UNIQUE invoice_id).
-    """
     try:
         cur = _ex(
             """INSERT INTO deposits(uid, invoice_id, amount, asset)
@@ -253,7 +357,6 @@ def deposit_create(uid: int, invoice_id: int, amount: float, asset: str) -> Opti
         )
         return cur.lastrowid
     except sqlite3.IntegrityError:
-        # invoice_id уже существует — дубль
         return None
 
 
@@ -266,10 +369,6 @@ def deposit_get_by_invoice(invoice_id: int) -> Optional[sqlite3.Row]:
 
 
 def deposit_confirm(invoice_id: int) -> bool:
-    """
-    Атомарно помечает депозит как paid. Возвращает True если именно эта
-    транзакция сменила статус (защита от двойного зачисления).
-    """
     con = _conn()
     cur = con.execute(
         """UPDATE deposits
@@ -297,17 +396,11 @@ def deposit_history(uid: int, limit: int = 10) -> list:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  WITHDRAWALS (выводы)
+#  WITHDRAWALS
 # ══════════════════════════════════════════════════════════════════════════════
 
 def withdrawal_create(uid: int, amount: float, asset: str) -> Optional[int]:
-    """
-    Создаёт заявку на вывод и СРАЗУ списывает средства.
-    Возвращает id заявки или None если средств недостаточно.
-    Всё выполняется в одной транзакции.
-    """
     con = _conn()
-    # Атомарно: списать баланс + создать заявку
     cur = con.execute(
         "UPDATE users SET balance=ROUND(balance-?,2) WHERE uid=? AND balance>=?",
         (amount, uid, amount),
@@ -334,7 +427,6 @@ def withdrawal_set_check(withdrawal_id: int, check_id: int, check_url: str):
 
 
 def withdrawal_set_failed(withdrawal_id: int):
-    """При ошибке создания чека — вернуть деньги пользователю."""
     con = _conn()
     row = con.execute(
         "SELECT uid, amount FROM withdrawals WHERE id=? AND status='pending'",
@@ -370,7 +462,6 @@ def withdrawal_history(uid: int, limit: int = 10) -> list:
 
 
 def withdrawal_has_pending(uid: int) -> bool:
-    """Проверяет есть ли незавершённая заявка (защита от параллельных запросов)."""
     row = _ex(
         "SELECT id FROM withdrawals WHERE uid=? AND status='pending' LIMIT 1",
         (uid,),
