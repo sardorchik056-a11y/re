@@ -3,6 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import database as db
 import duels
+import payments
 
 BOT_TOKEN = "8796618330:AAHLie3NBXmDR5FqUiFhvwBtghU9aA5Vor0"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
@@ -216,7 +217,6 @@ def text_active_games(games: list) -> str:
             f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━━\n'
             f'<tg-emoji emoji-id="6030776052345737530">⚔️</tg-emoji>Пусто.\n'
-
         )
     return (
         f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Активные игры</b>  ({len(games)} шт.)\n'
@@ -245,6 +245,26 @@ def text_duel_view(g) -> str:
 #  ADMIN — /add  /sub
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _resolve_target(message, target_raw: str):
+    """
+    Возвращает (uid, None) при успехе или (None, error_text) при ошибке.
+    Работает и с @username и с числовым ID.
+    """
+    if target_raw.startswith("@"):
+        uid = db.resolve_username(target_raw[1:])
+        if uid is None:
+            return None, (
+                f"❌ Пользователь <b>{target_raw}</b> не найден.\n"
+                f"Он должен хотя бы раз запустить бота (/start)."
+            )
+        return uid, None
+    else:
+        try:
+            return int(target_raw), None
+        except ValueError:
+            return None, "❌ Укажи числовой ID или @username."
+
+
 @bot.message_handler(commands=["add"])
 def cmd_add(message):
     if message.from_user.id not in ADMINS:
@@ -259,7 +279,9 @@ def cmd_add(message):
             "или: <code>/add 123456789 500</code>",
         )
         return
+
     target_raw, amount_raw = parts[1], parts[2]
+
     try:
         amount = float(amount_raw.replace(",", "."))
         if amount <= 0:
@@ -267,24 +289,16 @@ def cmd_add(message):
     except ValueError:
         bot.reply_to(message, "❌ Сумма должна быть положительным числом.")
         return
-    if target_raw.startswith("@"):
-        target_id = db.resolve_username(target_raw[1:])
-        if target_id is None:
-            bot.reply_to(
-                message,
-                f"❌ Пользователь <b>{target_raw}</b> не найден.\n"
-                f"Он должен хотя бы раз запустить бота (/start).",
-            )
-            return
-    else:
-        try:
-            target_id = int(target_raw)
-        except ValueError:
-            bot.reply_to(message, "❌ Укажи числовой ID или @username.")
-            return
+
+    target_id, err = _resolve_target(message, target_raw)
+    if err:
+        bot.reply_to(message, err)
+        return
+
     db.ensure_user(target_id)
     db.add_balance(target_id, amount)
     new_balance = db.get_balance(target_id)
+
     bot.reply_to(
         message,
         f'✅ <b>Баланс пополнен</b>\n'
@@ -293,6 +307,7 @@ def cmd_add(message):
         f'💰 Начислено: <b>+${amount:,.2f}</b>\n'
         f'💎 Новый баланс: <b>${new_balance:,.2f}</b>',
     )
+
     try:
         bot.send_message(
             target_id,
@@ -310,14 +325,27 @@ def cmd_add(message):
 
 @bot.message_handler(commands=["sub"])
 def cmd_sub(message):
+    """
+    /sub @username 500  или  /sub 123456789 500
+    Снимает указанную сумму с баланса пользователя.
+    Если баланс меньше — снимает до нуля и сообщает реально снятое.
+    """
     if message.from_user.id not in ADMINS:
         bot.reply_to(message, "❌ Нет доступа.")
         return
+
     parts = message.text.strip().split()
     if len(parts) != 3:
-        bot.reply_to(message, "❌ Используй: <code>/sub @username 500</code>")
+        bot.reply_to(
+            message,
+            "❌ Неверный формат.\n"
+            "Используй: <code>/sub @username 500</code>\n"
+            "или: <code>/sub 123456789 500</code>",
+        )
         return
+
     target_raw, amount_raw = parts[1], parts[2]
+
     try:
         amount = float(amount_raw.replace(",", "."))
         if amount <= 0:
@@ -325,33 +353,71 @@ def cmd_sub(message):
     except ValueError:
         bot.reply_to(message, "❌ Сумма должна быть положительным числом.")
         return
-    if target_raw.startswith("@"):
-        target_id = db.resolve_username(target_raw[1:])
-    else:
-        try:
-            target_id = int(target_raw)
-        except ValueError:
-            bot.reply_to(message, "❌ Укажи числовой ID или @username.")
-            return
-    if target_id is None:
-        bot.reply_to(message, f"❌ Пользователь {target_raw} не найден.")
+
+    target_id, err = _resolve_target(message, target_raw)
+    if err:
+        bot.reply_to(message, err)
         return
-    db.add_balance(target_id, -amount)
+
+    db.ensure_user(target_id)
+
+    current_balance = db.get_balance(target_id)
+
+    # Снимаем не больше чем есть на балансе
+    actually_sub = min(amount, current_balance)
+
+    if actually_sub <= 0:
+        bot.reply_to(
+            message,
+            f'❌ У пользователя <code>{target_id}</code> нулевой баланс. Нечего снимать.',
+        )
+        return
+
+    db.add_balance(target_id, -actually_sub)
     new_balance = db.get_balance(target_id)
+
+    # Предупреждаем если списали меньше запрошенного
+    warn = ""
+    if actually_sub < amount:
+        warn = f'\n⚠️ Баланс был меньше запрошенного — списано только <b>${actually_sub:,.2f}</b>'
+
     bot.reply_to(
         message,
         f'✅ <b>Баланс списан</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'👤 ID: <code>{target_id}</code>\n'
-        f'💸 Списано: <b>-${amount:,.2f}</b>\n'
-        f'💎 Новый баланс: <b>${new_balance:,.2f}</b>',
+        f'💸 Списано: <b>-${actually_sub:,.2f}</b>\n'
+        f'💎 Новый баланс: <b>${new_balance:,.2f}</b>'
+        f'{warn}',
     )
+
+    try:
+        bot.send_message(
+            target_id,
+            f'⚠️ <b>С вашего баланса списаны средства!</b>\n'
+            f'━━━━━━━━━━━━━━━━━━━━━\n'
+            f'➖ Списано: <b>-${actually_sub:,.2f}</b>\n'
+            f'💎 Ваш баланс: <b>${new_balance:,.2f}</b>',
+        )
+    except Exception:
+        bot.send_message(
+            message.chat.id,
+            f'⚠️ Пользователь <code>{target_id}</code> не запускал бота — уведомление не отправлено.',
+        )
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HANDLERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-WELCOME_TEXT = '<tg-emoji emoji-id="5258501105293205250">👤</tg-emoji><b>Добро пожаловать, стрелок.</b>\n\n<b><tg-emoji emoji-id="5258185631355378853">👤</tg-emoji>Здесь слова имеют вес только если подкреплены звоном монет. Хочешь доказать, что ты лучший?</b> \n<b><tg-emoji emoji-id="6039496266180726678">👤</tg-emoji>Приготовь свой кошелек и хладнокровие!</b>'
+WELCOME_TEXT = (
+    '<tg-emoji emoji-id="5258501105293205250">👤</tg-emoji>'
+    '<b>Добро пожаловать, стрелок.</b>\n\n'
+    '<b><tg-emoji emoji-id="5258185631355378853">👤</tg-emoji>'
+    'Здесь слова имеют вес только если подкреплены звоном монет. '
+    'Хочешь доказать, что ты лучший?</b> \n'
+    '<b><tg-emoji emoji-id="6039496266180726678">👤</tg-emoji>'
+    'Приготовь свой кошелек и хладнокровие!</b>'
+)
 
 
 @bot.message_handler(commands=["start", "menu"])
@@ -366,7 +432,9 @@ def start_handler(message):
 
 
 @bot.callback_query_handler(func=lambda call: not (
-    call.data.startswith("duel_join:") or call.data.startswith("duel_cancel:")
+    call.data.startswith("duel_join:")
+    or call.data.startswith("duel_cancel:")
+    or call.data == "pay_cancel"           # обрабатывается в payments.py
 ))
 def callback_handler(call):
     chat_id = call.message.chat.id
@@ -431,21 +499,109 @@ def callback_handler(call):
     elif data == "about":
         edit(text_about(), kb_about())
 
+    # ── Кнопки Пополнить / Вывести перенаправляют в ЛС ──────────────────
+
     elif data == "deposit":
-        edit(
-            f'<tg-emoji emoji-id="{EMOJI_DEPOSIT}">📥</tg-emoji> <b>Пополнение</b>\n\n'
-            '🚧 Раздел в разработке...',
-            kb_back(),
-        )
+        uid = user.id
+        if call.message.chat.type != "private":
+            # Отправляем пользователю ссылку на ЛС бота
+            bot_info = bot.get_me()
+            kb = InlineKeyboardMarkup()
+            kb.add(InlineKeyboardButton(
+                "💳 Перейти к пополнению",
+                url=f"https://t.me/{bot_info.username}?start=deposit",
+            ))
+            try:
+                bot.answer_callback_query(call.id)
+                bot.send_message(
+                    uid,
+                    "💳 Нажмите кнопку ниже чтобы перейти к пополнению в ЛС бота:",
+                    reply_markup=kb,
+                )
+            except Exception:
+                bot.answer_callback_query(
+                    call.id,
+                    "Напишите боту в личные сообщения: /deposit",
+                    show_alert=True,
+                )
+            return
+        else:
+            # Уже в ЛС — запускаем напрямую
+            payments._set_state(uid, "deposit_amount")
+            bot.answer_callback_query(call.id)
+            bot.send_message(
+                uid,
+                payments._t_deposit_ask(),
+                parse_mode="HTML",
+                reply_markup=payments._kb_cancel(),
+            )
+            return
 
     elif data == "withdraw":
-        edit(
-            f'<tg-emoji emoji-id="{EMOJI_WITHDRAW}">📤</tg-emoji> <b>Вывод</b>\n\n'
-            '🚧 Раздел в разработке...',
-            kb_back(),
-        )
+        uid = user.id
+        if call.message.chat.type != "private":
+            bot_info = bot.get_me()
+            kb = InlineKeyboardMarkup()
+            kb.add(InlineKeyboardButton(
+                "📤 Перейти к выводу",
+                url=f"https://t.me/{bot_info.username}?start=withdraw",
+            ))
+            try:
+                bot.answer_callback_query(call.id)
+                bot.send_message(
+                    uid,
+                    "📤 Нажмите кнопку ниже чтобы перейти к выводу в ЛС бота:",
+                    reply_markup=kb,
+                )
+            except Exception:
+                bot.answer_callback_query(
+                    call.id,
+                    "Напишите боту в личные сообщения: /withdraw",
+                    show_alert=True,
+                )
+            return
+        else:
+            balance = db.get_balance(uid)
+            payments._set_state(uid, "withdraw_amount")
+            bot.answer_callback_query(call.id)
+            bot.send_message(
+                uid,
+                payments._t_withdraw_ask(balance),
+                parse_mode="HTML",
+                reply_markup=payments._kb_cancel(),
+            )
+            return
 
     bot.answer_callback_query(call.id)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  /start с параметром (deep link) — для редиректа из группы
+# ══════════════════════════════════════════════════════════════════════════════
+
+@bot.message_handler(commands=["start"])
+def start_with_param(message):
+    uid  = message.from_user.id
+    text = message.text.strip()
+    db.ensure_user(
+        uid,
+        message.from_user.username or "",
+        (f"{message.from_user.first_name or ''} {message.from_user.last_name or ''}").strip(),
+    )
+
+    if "deposit" in text and message.chat.type == "private":
+        payments._set_state(uid, "deposit_amount")
+        bot.send_message(uid, payments._t_deposit_ask(), parse_mode="HTML",
+                         reply_markup=payments._kb_cancel())
+        return
+    if "withdraw" in text and message.chat.type == "private":
+        balance = db.get_balance(uid)
+        payments._set_state(uid, "withdraw_amount")
+        bot.send_message(uid, payments._t_withdraw_ask(balance), parse_mode="HTML",
+                         reply_markup=payments._kb_cancel())
+        return
+
+    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=kb_main())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -453,8 +609,15 @@ def callback_handler(call):
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+
     db.init_db()
     duels.register(bot)
+    payments.register(bot)   # ← регистрирует хендлеры + запускает фоновый поллинг
 
     print("Бот запущен...")
     bot.infinity_polling(skip_pending=True)
