@@ -5,6 +5,8 @@ database.py — SQLite-хранилище (WAL-mode, thread-safe)
   users        — балансы, оборот, рефералы, дата регистрации
   games        — активные / завершённые дуэли
   game_players — данные каждого игрока в дуэли (очки, броски)
+  deposits     — пополнения через CryptoBot (защита от дублей по invoice_id)
+  withdrawals  — заявки на вывод через CryptoBot чек
 """
 
 import json
@@ -63,11 +65,11 @@ def init_db():
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id     INTEGER NOT NULL,
             game_type   TEXT    NOT NULL,
-            mode        TEXT    NOT NULL,   -- 'x' | 'total'
+            mode        TEXT    NOT NULL,
             rounds      INTEGER NOT NULL,
             win_score   INTEGER NOT NULL,
             bet         REAL    NOT NULL,
-            state       TEXT    NOT NULL DEFAULT 'lobby',   -- lobby|playing|finished
+            state       TEXT    NOT NULL DEFAULT 'lobby',
             lobby_msg   INTEGER DEFAULT 0,
             game_msg    INTEGER DEFAULT 0,
             p1_uid      INTEGER NOT NULL,
@@ -86,9 +88,36 @@ def init_db():
             PRIMARY KEY (game_id, uid)
         );
 
+        -- Пополнения: invoice_id уникален — защита от двойного зачисления
+        CREATE TABLE IF NOT EXISTS deposits (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid         INTEGER NOT NULL,
+            invoice_id  INTEGER NOT NULL UNIQUE,   -- CryptoBot invoice id
+            amount      REAL    NOT NULL,
+            asset       TEXT    NOT NULL DEFAULT 'USDT',
+            status      TEXT    NOT NULL DEFAULT 'pending',  -- pending | paid | expired
+            created_at  INTEGER DEFAULT (strftime('%s','now')),
+            paid_at     INTEGER DEFAULT NULL
+        );
+
+        -- Выводы: чек создаётся ботом, храним check_id чтобы не создать дважды
+        CREATE TABLE IF NOT EXISTS withdrawals (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid         INTEGER NOT NULL,
+            amount      REAL    NOT NULL,
+            asset       TEXT    NOT NULL DEFAULT 'USDT',
+            check_id    INTEGER DEFAULT NULL,       -- CryptoBot check id после создания
+            check_url   TEXT    DEFAULT NULL,       -- ссылка на чек
+            status      TEXT    NOT NULL DEFAULT 'pending',  -- pending | sent | failed
+            created_at  INTEGER DEFAULT (strftime('%s','now')),
+            sent_at     INTEGER DEFAULT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_games_chat ON games(chat_id, state);
         CREATE INDEX IF NOT EXISTS idx_games_p1   ON games(p1_uid, state);
         CREATE INDEX IF NOT EXISTS idx_games_p2   ON games(p2_uid, state);
+        CREATE INDEX IF NOT EXISTS idx_dep_uid    ON deposits(uid, status);
+        CREATE INDEX IF NOT EXISTS idx_wit_uid    ON withdrawals(uid, status);
     """)
     con.commit()
 
@@ -149,7 +178,6 @@ def get_username_by_uid(uid: int) -> Optional[str]:
 
 
 def resolve_username(username: str) -> Optional[int]:
-    """@username → uid (если зарегистрирован)."""
     row = _ex(
         "SELECT uid FROM users WHERE LOWER(username)=?",
         (username.lower().lstrip("@"),),
@@ -158,7 +186,6 @@ def resolve_username(username: str) -> Optional[int]:
     return row["uid"] if row else None
 
 
-# Реферальная система
 def add_referral(ref_uid: int, amount_earned: float):
     _ex(
         """UPDATE users
@@ -178,13 +205,12 @@ def get_referral_stats(uid: int):
     return (row["ref_count"], row["ref_earned"]) if row else (0, 0.0)
 
 
-# Статистика (заглушка — расширяй по необходимости)
 def get_stats(period: str = "all") -> dict:
     if period == "all":
         cond = ""
     elif period == "day":
         cond = "AND created_at >= strftime('%s','now','-1 day')"
-    else:  # week
+    else:
         cond = "AND created_at >= strftime('%s','now','-7 days')"
 
     row = _ex(
@@ -211,6 +237,149 @@ def days_since_registration(uid: int) -> int:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  DEPOSITS (пополнения)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def deposit_create(uid: int, invoice_id: int, amount: float, asset: str) -> Optional[int]:
+    """
+    Создаёт запись о депозите. Возвращает id записи или None если invoice уже есть
+    (защита от дублей на уровне БД через UNIQUE invoice_id).
+    """
+    try:
+        cur = _ex(
+            """INSERT INTO deposits(uid, invoice_id, amount, asset)
+               VALUES(?,?,?,?)""",
+            (uid, invoice_id, amount, asset),
+        )
+        return cur.lastrowid
+    except sqlite3.IntegrityError:
+        # invoice_id уже существует — дубль
+        return None
+
+
+def deposit_get_by_invoice(invoice_id: int) -> Optional[sqlite3.Row]:
+    return _ex(
+        "SELECT * FROM deposits WHERE invoice_id=?",
+        (invoice_id,),
+        fetch="one",
+    )
+
+
+def deposit_confirm(invoice_id: int) -> bool:
+    """
+    Атомарно помечает депозит как paid. Возвращает True если именно эта
+    транзакция сменила статус (защита от двойного зачисления).
+    """
+    con = _conn()
+    cur = con.execute(
+        """UPDATE deposits
+           SET status='paid', paid_at=strftime('%s','now')
+           WHERE invoice_id=? AND status='pending'""",
+        (invoice_id,),
+    )
+    con.commit()
+    return cur.rowcount > 0
+
+
+def deposit_expire(invoice_id: int):
+    _ex(
+        "UPDATE deposits SET status='expired' WHERE invoice_id=? AND status='pending'",
+        (invoice_id,),
+    )
+
+
+def deposit_history(uid: int, limit: int = 10) -> list:
+    return _ex(
+        "SELECT * FROM deposits WHERE uid=? ORDER BY created_at DESC LIMIT ?",
+        (uid, limit),
+        fetch="all",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  WITHDRAWALS (выводы)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def withdrawal_create(uid: int, amount: float, asset: str) -> Optional[int]:
+    """
+    Создаёт заявку на вывод и СРАЗУ списывает средства.
+    Возвращает id заявки или None если средств недостаточно.
+    Всё выполняется в одной транзакции.
+    """
+    con = _conn()
+    # Атомарно: списать баланс + создать заявку
+    cur = con.execute(
+        "UPDATE users SET balance=ROUND(balance-?,2) WHERE uid=? AND balance>=?",
+        (amount, uid, amount),
+    )
+    if cur.rowcount == 0:
+        con.rollback()
+        return None
+    cur2 = con.execute(
+        "INSERT INTO withdrawals(uid, amount, asset) VALUES(?,?,?)",
+        (uid, amount, asset),
+    )
+    wid = cur2.lastrowid
+    con.commit()
+    return wid
+
+
+def withdrawal_set_check(withdrawal_id: int, check_id: int, check_url: str):
+    _ex(
+        """UPDATE withdrawals
+           SET check_id=?, check_url=?, status='sent', sent_at=strftime('%s','now')
+           WHERE id=?""",
+        (check_id, check_url, withdrawal_id),
+    )
+
+
+def withdrawal_set_failed(withdrawal_id: int):
+    """При ошибке создания чека — вернуть деньги пользователю."""
+    con = _conn()
+    row = con.execute(
+        "SELECT uid, amount FROM withdrawals WHERE id=? AND status='pending'",
+        (withdrawal_id,),
+    ).fetchone()
+    if not row:
+        return
+    con.execute(
+        "UPDATE users SET balance=ROUND(balance+?,2) WHERE uid=?",
+        (row["amount"], row["uid"]),
+    )
+    con.execute(
+        "UPDATE withdrawals SET status='failed' WHERE id=?",
+        (withdrawal_id,),
+    )
+    con.commit()
+
+
+def withdrawal_get(withdrawal_id: int) -> Optional[sqlite3.Row]:
+    return _ex(
+        "SELECT * FROM withdrawals WHERE id=?",
+        (withdrawal_id,),
+        fetch="one",
+    )
+
+
+def withdrawal_history(uid: int, limit: int = 10) -> list:
+    return _ex(
+        "SELECT * FROM withdrawals WHERE uid=? ORDER BY created_at DESC LIMIT ?",
+        (uid, limit),
+        fetch="all",
+    )
+
+
+def withdrawal_has_pending(uid: int) -> bool:
+    """Проверяет есть ли незавершённая заявка (защита от параллельных запросов)."""
+    row = _ex(
+        "SELECT id FROM withdrawals WHERE uid=? AND status='pending' LIMIT 1",
+        (uid,),
+        fetch="one",
+    )
+    return row is not None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  GAMES
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -218,7 +387,6 @@ def game_create(
     chat_id: int, game_type: str, mode: str,
     rounds: int, win_score: int, bet: float, p1_uid: int,
 ) -> int:
-    """Создаёт запись игры + запись игрока 1. Возвращает game_id."""
     con = _conn()
     cur = con.execute(
         """INSERT INTO games(chat_id,game_type,mode,rounds,win_score,bet,p1_uid)
@@ -256,7 +424,6 @@ def game_get(game_id: int) -> Optional[sqlite3.Row]:
 
 
 def game_get_by_chat(chat_id: int) -> list:
-    """Все активные (lobby|playing) игры в чате."""
     return _ex(
         "SELECT * FROM games WHERE chat_id=? AND state IN ('lobby','playing')",
         (chat_id,),
@@ -265,7 +432,6 @@ def game_get_by_chat(chat_id: int) -> list:
 
 
 def game_get_active_lobby_all() -> list:
-    """Все игры в состоянии lobby (для /active_games в меню)."""
     return _ex(
         "SELECT * FROM games WHERE state='lobby' ORDER BY created_at DESC",
         fetch="all",
@@ -273,7 +439,6 @@ def game_get_active_lobby_all() -> list:
 
 
 def game_get_by_creator(p1_uid: int) -> list:
-    """Все lobby-игры созданные данным игроком (для /delall, /myg)."""
     return _ex(
         "SELECT * FROM games WHERE p1_uid=? AND state='lobby'",
         (p1_uid,),
@@ -282,7 +447,6 @@ def game_get_by_creator(p1_uid: int) -> list:
 
 
 def game_get_all_active_for_user(uid: int) -> list:
-    """Все активные игры (lobby|playing) в которых участвует игрок."""
     return _ex(
         """SELECT * FROM games
            WHERE state IN ('lobby','playing')
