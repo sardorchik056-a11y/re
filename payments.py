@@ -1,21 +1,3 @@
-"""
-payments.py — пополнение и вывод через @CryptoBot (CryptoPay API)
-
-Вся навигация только через edit_message_text — никаких новых сообщений.
-FSM хранит (chat_id, message_id) исходного меню-сообщения и редактирует его.
-
-Защита от дублей:
-  • invoice_id — UNIQUE в таблице deposits
-  • deposit_confirm() — UPDATE WHERE status='pending' (rowcount=0 если уже обработан)
-  • withdrawal_create() — атомарное списание + создание заявки в одной транзакции
-  • withdrawal_has_pending() — блокирует параллельные запросы одного юзера
-
-Настройки:
-  DEPOSIT_MIN       = 0.10 USDT
-  INVOICE_EXPIRE_IN = 300 сек (5 мин)
-  POLL_INTERVAL     = 3 сек
-"""
-
 import threading
 import time
 import logging
@@ -27,15 +9,11 @@ from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 import database as db
 
-logger = logging.getLogger(__name__)
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  КОНФИГ
-# ══════════════════════════════════════════════════════════════════════════════
+logger = logging.getLogger(__name__)                                                                       
 
 CRYPTO_PAY_TOKEN  = "552018:AAmEzVekZI0E1Qcpi0ccOxbkOMk01J2Qs2n"
 CRYPTO_PAY_URL    = "https://pay.crypt.bot/api"
-# CRYPTO_PAY_URL  = "https://testnet-pay.crypt.bot/api"
+                                                       
 
 DEFAULT_ASSET     = "USDT"
 
@@ -47,18 +25,12 @@ WITHDRAW_MAX      = 10_000.0
 POLL_INTERVAL     = 3
 INVOICE_EXPIRE_IN = 300
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  EMOJI IDs для кнопок (icon_custom_emoji_id — как в main.py)
-# ══════════════════════════════════════════════════════════════════════════════
 
-EMOJI_PAY      = "5260730055880876557"   # кнопка оплатить
-EMOJI_CANCEL   = "6039539366177541657"   # кнопка отменить
-EMOJI_BACK     = "6039539366177541657"   # кнопка назад
-EMOJI_CHECK    = "5258185631355378853"   # кнопка получить чек
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  КАСТОМНЫЕ ЭМОДЗИ ДЛЯ ТЕКСТОВ (tg-emoji в теле сообщений)
-# ══════════════════════════════════════════════════════════════════════════════
+EMOJI_PAY      = "5260730055880876557"                    
+EMOJI_CANCEL   = "6039539366177541657"                    
+EMOJI_BACK     = "6039539366177541657"                 
+EMOJI_CHECK    = "5258185631355378853"                        
+                                                                       
 
 E_WALLET   = '<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji>'
 E_MONEY    = '<tg-emoji emoji-id="5258204546391351475">💰</tg-emoji>'
@@ -73,9 +45,9 @@ E_PAY      = '<tg-emoji emoji-id="5258204546391351475">💸</tg-emoji>'
 E_CROSS    = '<tg-emoji emoji-id="5258204546391351475">❌</tg-emoji>'
 E_WARNING  = '<tg-emoji emoji-id="5258204546391351475">⚠️</tg-emoji>'
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ХЕЛПЕРЫ ДЛЯ КНОПОК (идентично main.py)
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                                         
+                                                                                
 
 def _btn(text: str, callback_data: str, emoji_id: str = "") -> InlineKeyboardButton:
     b = InlineKeyboardButton(text=text, callback_data=callback_data)
@@ -91,9 +63,9 @@ def _url_btn(text: str, url: str, emoji_id: str = "") -> InlineKeyboardButton:
     return b
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  CryptoPay API клиент
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                       
+                                                                                
 
 class CryptoPayClient:
     def __init__(self, token: str, base_url: str):
@@ -150,9 +122,9 @@ class CryptoPayClient:
         return self._call("getBalance") or []
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  FSM — состояния пользователей
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                                
+                                                                                
 
 _states: dict = {}
 _states_lock  = threading.Lock()
@@ -179,9 +151,9 @@ def _clear_state(uid: int):
         _states.pop(uid, None)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  КЛАВИАТУРЫ
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+             
+                                                                                
 
 def _kb_cancel_input() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
@@ -209,9 +181,9 @@ def _kb_back_profile() -> InlineKeyboardMarkup:
     return kb
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ТЕКСТЫ
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+         
+                                                                                
 
 def _t_deposit_ask() -> str:
     return (
@@ -280,9 +252,9 @@ def _t_withdraw_failed() -> str:
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ВСПОМОГАТЕЛЬНАЯ: безопасное редактирование
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                                             
+                                                                                
 
 def _edit(bot: telebot.TeleBot, chat_id: int, message_id: int,
           text: str, markup=None):
@@ -298,9 +270,9 @@ def _edit(bot: telebot.TeleBot, chat_id: int, message_id: int,
         logger.debug("edit_message_text failed: %s", e)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ФОНОВЫЙ ПОЛЛИНГ
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                  
+                                                                                
 
 def _start_poll_loop(bot: telebot.TeleBot, client: CryptoPayClient):
     def loop():
@@ -333,7 +305,7 @@ def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
         new_balance = db.get_balance(uid)
 
         state = _get_state(uid)
-        if state and state.get("step") == "deposit_waiting" \
+        if state and state.get("step") == "deposit_waiting"\
                 and state.get("invoice_id") == invoice_id:
             _edit(
                 bot,
@@ -354,9 +326,9 @@ def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
                 pass
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ПУБЛИЧНЫЙ API — вызывается из main.py
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                                        
+                                                                                
 
 def open_deposit(bot: telebot.TeleBot, uid: int,
                  chat_id: int, message_id: int):
@@ -371,9 +343,9 @@ def open_withdraw(bot: telebot.TeleBot, uid: int,
     _edit(bot, chat_id, message_id, _t_withdraw_ask(balance), _kb_cancel_input())
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  РЕГИСТРАЦИЯ ХЕНДЛЕРОВ
-# ══════════════════════════════════════════════════════════════════════════════
+                                                                                
+                        
+                                                                                
 
 def register(bot: telebot.TeleBot):
     client = CryptoPayClient(CRYPTO_PAY_TOKEN, CRYPTO_PAY_URL)
@@ -386,7 +358,7 @@ def register(bot: telebot.TeleBot):
 
     _start_poll_loop(bot, client)
 
-    # ── Отмена через кнопку ────────────────────────────────────────────────
+                                                                             
 
     @bot.callback_query_handler(func=lambda call: call.data == "pay_cancel")
     def cb_pay_cancel(call):
@@ -405,7 +377,7 @@ def register(bot: telebot.TeleBot):
                 m.kb_profile(),
             )
 
-    # ── Обработка ввода суммы (text FSM) ───────────────────────────────────
+                                                                             
 
     @bot.message_handler(
         func=lambda msg: (
@@ -443,7 +415,7 @@ def register(bot: telebot.TeleBot):
             )
             return
 
-        # ── ПОПОЛНЕНИЕ ────────────────────────────────────────────────────
+                                                                            
 
         if step == "deposit_amount":
             if not (DEPOSIT_MIN <= amount <= DEPOSIT_MAX):
@@ -504,7 +476,7 @@ def register(bot: telebot.TeleBot):
 
             threading.Thread(target=_expire, daemon=True).start()
 
-        # ── ВЫВОД ─────────────────────────────────────────────────────────
+                                                                            
 
         elif step == "withdraw_amount":
             balance = db.get_balance(uid)
