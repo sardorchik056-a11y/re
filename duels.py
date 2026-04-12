@@ -139,10 +139,10 @@ def _t_x(g, p1_display: str, p2_display: str,
 
     def status(val):
         if val is not None:
-            return f"✅ бросил <b>{val}</b>"
-        return "⏳ ждём броска"
+            return f"<b>{val}</b>{e}"
+        return "⏳"
 
-    result_line = f"\n💬 {last_round_result}\n\n" if last_round_result else "\n"
+    result_line = f"\n {last_round_result}\n\n" if last_round_result else "\n"
     return (
         f"{e} <b>Раунд {rnd}  |  до {ws} очков!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -368,13 +368,15 @@ def register(bot: telebot.TeleBot):
                 db.player_add_point(game_id, p1_uid)
                 p1_pts += 1
                 lrr = (
-                    f"Раунд {rnd_num}: ({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
+                    f"Раунд {rnd_num}:({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
+                    f"({v1} vs {v2}) — счёт {p1_pts}:{p2_pts}"
                 )
             elif v2 > v1:
                 db.player_add_point(game_id, p2_uid)
                 p2_pts += 1
                 lrr = (
                     f"Раунд {rnd_num}:({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
+                    f"({v2} vs {v1}) — счёт {p1_pts}:{p2_pts}"
                 )
             else:
                 lrr = (
