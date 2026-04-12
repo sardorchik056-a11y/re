@@ -187,21 +187,23 @@ def _t_x(g: Game) -> str:
 
 
 def _t_total(g: Game) -> str:
-    """Суммарный режим: каждый бросает N раз в любом порядке."""
+    """
+    Суммарный режим: каждый бросает N раз в любом порядке, без очереди.
+    Каждый игрок сам решает когда бросить — хоть все N сразу.
+    """
     e = DICE_EMOJI[g.game_type]
     p1, p2 = g.player1, g.player2
     s1, s2 = sum(p1.scores), sum(p2.scores)
-    done  = len(p1.scores) + len(p2.scores)
-    total = g.rounds * 2
     ico = PLAYER_ICON
 
     def row(p: Player, s: int) -> str:
         vals = " · ".join(str(v) for v in p.scores) if p.scores else "—"
         left = g.rounds - len(p.scores)
-        return f"{vals}  =  <b>{s}</b>  (осталось: {left})"
+        done_mark = " ✅" if left == 0 else f"  (осталось: {left})"
+        return f"{vals}  =  <b>{s}</b>{done_mark}"
 
     return (
-        f"{e} <b>Бросок {done + 1} / {total}</b>\n"
+        f"{e} <b>Суммарный режим  |  {g.rounds} бросков каждому</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{ico} {p1.display}:  {row(p1, s1)}\n"
         f"{ico} {p2.display}:  {row(p2, s2)}\n"
@@ -294,9 +296,7 @@ def register(bot: telebot.TeleBot):
 
     # ──────────────────────────────────────────────────────────────────────
     #  X-режим: оба бросают в любом порядке, раунд закрывается когда оба
-    #  бросили. После каждого раунда показывается итоговый комментарий:
-    #    • кто выиграл бросок и новый счёт
-    #    • или «ничья — счёт прежний» если значения равны
+    #  бросили. После каждого раунда показывается итоговый комментарий.
     #  Победа — первый кто набрал g.win_score очков (= N из команды)
     # ──────────────────────────────────────────────────────────────────────
 
@@ -319,7 +319,6 @@ def register(bot: telebot.TeleBot):
             p2.scores.append(v2)
             rnd_num = len(p1.scores)
 
-            # ── Определяем победителя раунда и формируем комментарий ──────
             if v1 > v2:
                 p1.points += 1
                 g.last_round_result = (
@@ -333,14 +332,11 @@ def register(bot: telebot.TeleBot):
                     f"({v2} vs {v1}) — счёт {p1.points}:{p2.points}"
                 )
             else:
-                # Ничья в раунде — очки не меняются, счёт прежний
                 g.last_round_result = (
                     f"Раунд {rnd_num}: ничья ({v1} = {v2}) — "
                     f"счёт прежний {p1.points}:{p2.points}"
                 )
-            # ─────────────────────────────────────────────────────────────
 
-            # Победа — первый кто достиг g.win_score (N из команды)
             if p1.points >= g.win_score:
                 end_game(g, winner=p1)
             elif p2.points >= g.win_score:
@@ -353,25 +349,26 @@ def register(bot: telebot.TeleBot):
             edit_game(g, _t_x(g))
 
     # ──────────────────────────────────────────────────────────────────────
-    #  Total-режим: строгая очерёдность p1 → p2 → p1 → ...
+    #  Total-режим: БЕЗ очереди — каждый бросает в любой момент, хоть все
+    #  N бросков подряд не дожидаясь соперника. Игра кончается когда оба
+    #  исчерпали все свои броски.
     # ──────────────────────────────────────────────────────────────────────
 
     def _handle_total(g: Game, uid: int, val: int):
         p1, p2 = g.player1, g.player2
 
-        if len(p1.scores) == len(p2.scores):
-            if uid != p1.uid:
-                return
+        if uid == p1.uid:
             if len(p1.scores) >= g.rounds:
-                return
+                return  # p1 уже использовал все броски
             p1.scores.append(val)
-        else:
-            if uid != p2.uid:
-                return
+        elif uid == p2.uid:
             if len(p2.scores) >= g.rounds:
-                return
+                return  # p2 уже использовал все броски
             p2.scores.append(val)
+        else:
+            return
 
+        # Оба закончили все броски — подводим итог
         if len(p1.scores) == g.rounds and len(p2.scores) == g.rounds:
             s1, s2 = sum(p1.scores), sum(p2.scores)
             if s1 > s2:
@@ -381,6 +378,7 @@ def register(bot: telebot.TeleBot):
             else:
                 end_game(g, draw=True)
         else:
+            # Кто-то ещё не закончил — обновляем таблицу
             edit_game(g, _t_total(g))
 
     # ── Создание дуэли ─────────────────────────────────────────────────────
