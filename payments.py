@@ -142,27 +142,27 @@ def _clear_state(uid: int):
 
 def _kb_cancel_input() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("❌ Отмена", callback_data="pay_cancel"))
+    kb.add(InlineKeyboardButton("❌Отмена", callback_data="pay_cancel"))
     return kb
 
 
 def _kb_pay(pay_url: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("💳 Оплатить через CryptoBot", url=pay_url))
-    kb.add(InlineKeyboardButton("❌ Отменить счёт", callback_data="pay_cancel"))
+    kb.add(InlineKeyboardButton("Оплатить", url=pay_url))
+    kb.add(InlineKeyboardButton("❌Отменить", callback_data="pay_cancel"))
     return kb
 
 
 def _kb_check(check_url: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("💸 Получить чек в CryptoBot", url=check_url))
-    kb.add(InlineKeyboardButton("◀️ Назад в профиль", callback_data="profile"))
+    kb.add(InlineKeyboardButton("Получить чек", url=check_url))
+    kb.add(InlineKeyboardButton("Назад", callback_data="profile"))
     return kb
 
 
 def _kb_back_profile() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("◀️ Назад в профиль", callback_data="profile"))
+    kb.add(InlineKeyboardButton("Назад", callback_data="profile"))
     return kb
 
 
