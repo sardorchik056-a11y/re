@@ -42,6 +42,9 @@ CMD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Кастомный премиум эмодзи — человечек перед именем игрока
+PLAYER_ICON = '<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji>'
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  СТРУКТУРЫ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -141,7 +144,6 @@ def _kb_cancel() -> InlineKeyboardMarkup:
 
 def _t_lobby(g: Game) -> str:
     e = DICE_EMOJI[g.game_type]
-    # x-режим: показываем до скольки очков, total: кол-во бросков
     mode_lbl = f"до {g.win_score} очков" if g.mode == "x" else f"{g.rounds} бросков • сумма"
     return (
         f"{e} <b>Дуэль открыта!</b>\n"
@@ -163,11 +165,12 @@ def _t_x(g: Game) -> str:
     e = DICE_EMOJI[g.game_type]
     p1, p2 = g.player1, g.player2
     rnd = len(p1.scores) + 1
+    ico = PLAYER_ICON
 
-    def status(player, val):
+    def status(val):
         if val is not None:
             return f"✅ бросил <b>{val}</b>"
-        return f"⏳ ждём броска"
+        return "⏳ ждём броска"
 
     # Блок с комментарием прошлого раунда (пустой в первом раунде)
     result_line = f"\n💬 {g.last_round_result}\n\n" if g.last_round_result else "\n"
@@ -175,8 +178,8 @@ def _t_x(g: Game) -> str:
     return (
         f"{e} <b>Раунд {rnd}  |  до {g.win_score} очков</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔴 {p1.display}  {_score_bar(p1.points, g.win_score)}  {status(p1, g.p1_round_val)}\n"
-        f"🔵 {p2.display}  {_score_bar(p2.points, g.win_score)}  {status(p2, g.p2_round_val)}\n"
+        f"{ico} {p1.display}  {_score_bar(p1.points, g.win_score)}  {status(g.p1_round_val)}\n"
+        f"{ico} {p2.display}  {_score_bar(p2.points, g.win_score)}  {status(g.p2_round_val)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━"
         f"{result_line}"
         f"Оба бросайте в любом порядке — ответьте на это сообщение эмодзи {e}"
@@ -190,6 +193,7 @@ def _t_total(g: Game) -> str:
     s1, s2 = sum(p1.scores), sum(p2.scores)
     done  = len(p1.scores) + len(p2.scores)
     total = g.rounds * 2
+    ico = PLAYER_ICON
 
     def row(p: Player, s: int) -> str:
         vals = " · ".join(str(v) for v in p.scores) if p.scores else "—"
@@ -199,8 +203,8 @@ def _t_total(g: Game) -> str:
     return (
         f"{e} <b>Бросок {done + 1} / {total}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔴 {p1.display}:  {row(p1, s1)}\n"
-        f"🔵 {p2.display}:  {row(p2, s2)}\n"
+        f"{ico} {p1.display}:  {row(p1, s1)}\n"
+        f"{ico} {p2.display}:  {row(p2, s2)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Оба бросают в любом порядке — ответьте на это сообщение эмодзи {e}"
     )
@@ -209,14 +213,15 @@ def _t_total(g: Game) -> str:
 def _t_finish(g: Game, winner: Optional[Player], draw=False) -> str:
     e = DICE_EMOJI[g.game_type]
     p1, p2 = g.player1, g.player2
+    ico = PLAYER_ICON
     if draw:
         result = "🤝 <b>Ничья!</b> Ставки возвращаются."
     else:
         result = f"🏆 Победитель: <b>{winner.display}</b>!\n💵 Выигрыш: <b>${g.bet * 2:,.2f}</b>"
     if g.mode == "x":
         detail = (
-            f"🔴 {p1.display}: {p1.points} очк.\n"
-            f"🔵 {p2.display}: {p2.points} очк."
+            f"{ico} {p1.display}: {p1.points} очк.\n"
+            f"{ico} {p2.display}: {p2.points} очк."
         )
     else:
         s1 = sum(p1.scores)
@@ -224,8 +229,8 @@ def _t_finish(g: Game, winner: Optional[Player], draw=False) -> str:
         def row(p, s):
             return " + ".join(str(v) for v in p.scores) + f" = <b>{s}</b>"
         detail = (
-            f"🔴 {p1.display}: {row(p1, s1)}\n"
-            f"🔵 {p2.display}: {row(p2, s2)}"
+            f"{ico} {p1.display}: {row(p1, s1)}\n"
+            f"{ico} {p2.display}: {row(p2, s2)}"
         )
     return (
         f"{e} <b>Игра окончена!</b>\n"
@@ -244,13 +249,6 @@ def is_duel_command(m: Message) -> bool:
 
 
 def is_duel_dice(m: Message) -> bool:
-    """
-    Принимаем кубик только если:
-      1. Это dice-сообщение с нужным эмодзи
-      2. Игра активна
-      3. Сообщение — реплай на game_msg
-      4. Отправитель — один из двух участников дуэли (не посторонний)
-    """
     if not m.dice:
         return False
     g = _games.get(m.chat.id)
@@ -260,7 +258,6 @@ def is_duel_dice(m: Message) -> bool:
         return False
     if not m.reply_to_message or m.reply_to_message.message_id != g.game_msg:
         return False
-    # ← КЛЮЧЕВАЯ ПРОВЕРКА: только участники дуэли
     uid = m.from_user.id
     if uid not in (g.player1.uid, g.player2.uid):
         return False
@@ -320,7 +317,7 @@ def register(bot: telebot.TeleBot):
             g.p2_round_val = None
             p1.scores.append(v1)
             p2.scores.append(v2)
-            rnd_num = len(p1.scores)  # номер только что завершённого раунда
+            rnd_num = len(p1.scores)
 
             # ── Определяем победителя раунда и формируем комментарий ──────
             if v1 > v2:
@@ -349,39 +346,32 @@ def register(bot: telebot.TeleBot):
             elif p2.points >= g.win_score:
                 end_game(g, winner=p2)
             else:
-                # Удаляем сообщение прошлого раунда, шлём новое с комментарием
                 safe_del(g.chat_id, g.game_msg)
                 sent = bot.send_message(g.chat_id, _t_x(g), parse_mode="HTML")
                 g.game_msg = sent.message_id
         else:
-            # Один уже бросил — обновляем статус ожидания в текущем сообщении
             edit_game(g, _t_x(g))
 
     # ──────────────────────────────────────────────────────────────────────
     #  Total-режим: строгая очерёдность p1 → p2 → p1 → ...
-    #  len(p1.scores) == len(p2.scores) → ход p1
-    #  len(p1.scores) >  len(p2.scores) → ход p2
     # ──────────────────────────────────────────────────────────────────────
 
     def _handle_total(g: Game, uid: int, val: int):
         p1, p2 = g.player1, g.player2
 
         if len(p1.scores) == len(p2.scores):
-            # Ход p1
             if uid != p1.uid:
                 return
             if len(p1.scores) >= g.rounds:
                 return
             p1.scores.append(val)
         else:
-            # p1 уже бросил в этом раунде → ход p2
             if uid != p2.uid:
                 return
             if len(p2.scores) >= g.rounds:
                 return
             p2.scores.append(val)
 
-        # Оба закончили все раунды?
         if len(p1.scores) == g.rounds and len(p2.scores) == g.rounds:
             s1, s2 = sum(p1.scores), sum(p2.scores)
             if s1 > s2:
@@ -421,8 +411,8 @@ def register(bot: telebot.TeleBot):
                 chat_id=chat_id,
                 game_type=gtype,
                 mode=mode,
-                rounds=rounds,      # total-режим: кол-во бросков каждого
-                win_score=rounds,   # x-режим: до N очков (= то же число из команды)
+                rounds=rounds,
+                win_score=rounds,
                 bet=bet,
                 player1=p1,
             )
@@ -461,8 +451,6 @@ def register(bot: telebot.TeleBot):
             g.state   = "playing"
 
         bot.answer_callback_query(call.id, "✅ Ты в игре!")
-
-        # убираем лобби-сообщение
         safe_del(chat_id, g.lobby_msg)
 
         text = _t_x(g) if g.mode == "x" else _t_total(g)
