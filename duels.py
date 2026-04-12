@@ -119,6 +119,23 @@ def _kb_cancel_lobby(game_id: int) -> InlineKeyboardMarkup:
     kb.add(InlineKeyboardButton("❌ Отменить", callback_data=f"duel_cancel:{game_id}"))
     return kb
 
+
+def _build_game_url(sent_msg) -> str:
+    """Строит прямую ссылку на сообщение с игрой в чате."""
+    chat_id = sent_msg.chat.id
+    msg_id  = sent_msg.message_id
+
+    # Публичный чат — есть username
+    if sent_msg.chat.username:
+        return f"https://t.me/{sent_msg.chat.username}/{msg_id}"
+
+    # Приватная супергруппа: chat_id вида -1001234567890
+    # Убираем минус и первые три символа «100»
+    clean_id = str(abs(chat_id))
+    if clean_id.startswith("100"):
+        clean_id = clean_id[3:]
+    return f"https://t.me/c/{clean_id}/{msg_id}"
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  ТЕКСТЫ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -149,7 +166,6 @@ def _t_x(g, p1_display: str, p2_display: str,
 
     def status(val):
         if val is not None:
-            # Премиум эмодзи числа вместо обычного числа с кубиком
             return NUM_EMOJI.get(val, str(val))
         return "⏳"
 
@@ -252,7 +268,6 @@ def is_duel_dice(m: Message) -> bool:
     gtype = EMOJI_TO_TYPE.get(m.dice.emoji)
     if gtype is None:
         return False
-    # Проверяем что есть активная игра в этом чате
     games = db.game_get_by_chat(m.chat.id)
     playing = [g for g in games if g["state"] == "playing"
                and g["game_msg"] == m.reply_to_message.message_id
@@ -304,6 +319,38 @@ def register(bot: telebot.TeleBot):
             p2_d = "?"
         return p1_d, p2_d
 
+    def _notify_joined(g, joiner_uid: int, p1_d: str, p2_d: str, sent_msg):
+        """
+        Отправляет присоединившемуся игроку (p2) в ЛС уведомление
+        с кнопкой-ссылкой на игровое сообщение в чате.
+        """
+        e = DICE_EMOJI.get(g["game_type"], "🎲")
+        game_url = _build_game_url(sent_msg)
+
+        mode_lbl = (
+            f"до {g['win_score']} очков" if g["mode"] == "x"
+            else f"{g['rounds']} бросков • сумма"
+        )
+
+        text = (
+            f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Соперник:  <b>{p1_d}</b>\n"
+            f"💎 Ставка:    <b>${g['bet']:,.2f}</b>\n"
+            f"🎮 Режим:     <b>{mode_lbl}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Бросай {e} в ответ на сообщение в чате!"
+        )
+
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("⚔️ Ваша игра", url=game_url))
+
+        try:
+            bot.send_message(joiner_uid, text, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            # Пользователь не начал диалог с ботом — молча пропускаем
+            pass
+
     def _end_game(g, winner_uid: Optional[int] = None, draw=False):
         """Завершает игру: обновляет БД, баланс, отправляет итог."""
         game_id = g["id"]
@@ -321,12 +368,10 @@ def register(bot: telebot.TeleBot):
         safe_del(g["chat_id"], g["game_msg"])
 
         if draw:
-            # Возврат ставок
             db.add_balance(p1_uid, bet)
             db.add_balance(p2_uid, bet)
             winner_d = None
         else:
-            # Победитель получает общий банк
             db.add_balance(winner_uid, bet * 2)
             winner_d = p1_d if winner_uid == p1_uid else p2_d
 
@@ -349,7 +394,6 @@ def register(bot: telebot.TeleBot):
         p1_rv = g["p1_round_val"]
         p2_rv = g["p2_round_val"]
 
-        # Защита от двойного броска в одном раунде
         if uid == p1_uid:
             if p1_rv is not None:
                 return
@@ -362,10 +406,9 @@ def register(bot: telebot.TeleBot):
             return
 
         db.game_update_round(game_id, p1_rv, p2_rv, g["last_round_result"])
-        g = db.game_get(game_id)  # свежие данные
+        g = db.game_get(game_id)
 
         if p1_rv is not None and p2_rv is not None:
-            # Раунд завершён
             v1, v2 = p1_rv, p2_rv
             db.player_add_score(game_id, p1_uid, v1)
             db.player_add_score(game_id, p2_uid, v2)
@@ -393,7 +436,6 @@ def register(bot: telebot.TeleBot):
                     f"счёт прежний {p1_pts}:{p2_pts}"
                 )
 
-            # Сбрасываем round_val
             db.game_update_round(game_id, None, None, lrr)
             g = db.game_get(game_id)
 
@@ -402,7 +444,6 @@ def register(bot: telebot.TeleBot):
             elif p2_pts >= g["win_score"]:
                 _end_game(g, winner_uid=p2_uid)
             else:
-                # Новый раунд — новое сообщение
                 safe_del(g["chat_id"], g["game_msg"])
                 p1_scores_len = len(db.player_get_scores(game_id, p1_uid))
                 text = _t_x(
@@ -412,7 +453,6 @@ def register(bot: telebot.TeleBot):
                 sent = bot.send_message(g["chat_id"], text, parse_mode="HTML")
                 db.game_set_game_msg(game_id, sent.message_id)
         else:
-            # Один из двух бросил — обновляем сообщение
             p1_d, p2_d = _load_displays(g)
             p1_pts = db.player_get_points(game_id, p1_uid)
             p2_pts = db.player_get_points(game_id, p2_uid)
@@ -438,7 +478,7 @@ def register(bot: telebot.TeleBot):
 
         if uid == p1_uid:
             if len(p1_scores) >= rounds:
-                return  # все броски уже использованы
+                return
             db.player_add_score(game_id, p1_uid, val)
             p1_scores = db.player_get_scores(game_id, p1_uid)
         elif uid == p2_uid:
@@ -476,7 +516,6 @@ def register(bot: telebot.TeleBot):
             return
         gtype, mode, rounds = parsed
 
-        # Для total минимум 2 броска (rounds уже >= 2 по regex, но явно)
         if mode == "total" and rounds < 2:
             bot.reply_to(message, "❌ Для total-режима минимальное число бросков — 2!")
             return
@@ -494,18 +533,13 @@ def register(bot: telebot.TeleBot):
         uid = message.from_user.id
         db.ensure_user(uid, message.from_user.username or "", _fmt_name(message.from_user))
 
-        # Проверка баланса
         if db.get_balance(uid) < bet:
-            bot.reply_to(
-                message,
-                f"❌ Недостаточно средств!",
-            )
+            bot.reply_to(message, f"❌ Недостаточно средств!")
             return
 
         chat_id = message.chat.id
 
         with _lock:
-            # Защита от дублей — один пользователь не может создать 2 lobby в одном чате
             active = db.game_get_by_chat(chat_id)
             for ag in active:
                 if ag["state"] == "lobby" and ag["p1_uid"] == uid:
@@ -522,12 +556,8 @@ def register(bot: telebot.TeleBot):
                         )
                         return
 
-            # Списываем ставку сразу
             if not db.subtract_balance(uid, bet):
-                bot.reply_to(
-                    message,
-                    f"❌ Недостаточно средств!",
-                )
+                bot.reply_to(message, f"❌ Недостаточно средств!")
                 return
 
             game_id = db.game_create(
@@ -567,7 +597,6 @@ def register(bot: telebot.TeleBot):
                 bot.answer_callback_query(call.id, "Нельзя играть самим с собой!", show_alert=True)
                 return
 
-            # Проверяем что p2 ещё не участвует в другой игре этого чата
             active = db.game_get_by_chat(g["chat_id"])
             for ag in active:
                 if ag["id"] == game_id:
@@ -606,8 +635,12 @@ def register(bot: telebot.TeleBot):
         else:
             text = _t_total(g, p1_d, p2_d, [], [])
 
+        # Отправляем игровое сообщение в чат
         sent = bot.send_message(g["chat_id"], text, parse_mode="HTML")
         db.game_set_game_msg(game_id, sent.message_id)
+
+        # Уведомляем присоединившегося (p2) в ЛС со ссылкой на игру
+        _notify_joined(g, uid, p1_d, p2_d, sent)
 
     # ── /del — удалить дуэль реплаем ────────────────────────────────────────
 
@@ -643,7 +676,6 @@ def register(bot: telebot.TeleBot):
                 bot.reply_to(message, "❌ Удалить дуэль может только её создатель.")
                 return
 
-            # Возврат ставки создателю
             db.add_balance(uid, target["bet"])
             db.game_delete(target["id"])
 
@@ -763,5 +795,4 @@ def register(bot: telebot.TeleBot):
         """Публичный API для main.py — все lobby-дуэли для кнопки 'Активные игры'."""
         return db.game_get_active_lobby_all()
 
-    # Делаем доступной из модуля
     register.get_lobby_games = get_all_lobby_games
