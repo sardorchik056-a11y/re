@@ -30,7 +30,9 @@ EMOJI_PAY      = "5260730055880876557"
 EMOJI_CANCEL   = "6039539366177541657"                    
 EMOJI_BACK     = "6039539366177541657"                 
 EMOJI_CHECK    = "5258185631355378853"                        
-                                                                       
+
+# Custom emoji for rubles instead of dollar sign
+EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">₽</tg-emoji>'
 
 E_WALLET   = '<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji>'
 E_MONEY    = '<tg-emoji emoji-id="5258204546391351475">💰</tg-emoji>'
@@ -190,8 +192,8 @@ def _t_deposit_ask() -> str:
         f"{E_WALLET} <b>Пополнение баланса</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f'<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Введите сумму в <b>{DEFAULT_ASSET}</b>:\n\n'
-        f" Минимум: <b>${DEPOSIT_MIN:,.2f}</b>\n"
-        f" Максимум: <b>${DEPOSIT_MAX:,.0f}</b>\n"
+        f" Минимум: {EMOJI_RUBLES}<b>{DEPOSIT_MIN:,.2f}</b>\n"
+        f" Максимум: {EMOJI_RUBLES}<b>{DEPOSIT_MAX:,.0f}</b>\n"
     )
 
 
@@ -210,7 +212,7 @@ def _t_deposit_success(amount: float, new_balance: float) -> str:
         f'<tg-emoji emoji-id="5258185631355378853">💎</tg-emoji> <b>Успешное пополнение!</b>\n'
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f'<tg-emoji emoji-id="5890848474563352982">💎</tg-emoji> Зачислено: <b>+{amount:,.2f} {DEFAULT_ASSET}</b>\n'
-        f'<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Ваш баланс: <b>${new_balance:,.2f}</b>'
+        f'<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Ваш баланс: {EMOJI_RUBLES}<b>{new_balance:,.2f}</b>'
     )
 
 
@@ -228,8 +230,8 @@ def _t_withdraw_ask(balance: float) -> str:
         f'<tg-emoji emoji-id="5258043150110301407">💎</tg-emoji> <b>Вывод средств</b>\n'
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f" Введите сумму вывода в <b>{DEFAULT_ASSET}</b>:\n\n"
-        f" Минимум: <b>${WITHDRAW_MIN:,.2f}</b>\n"
-        f" Максимум: <b>${WITHDRAW_MAX:,.0f}</b>\n"
+        f" Минимум: {EMOJI_RUBLES}<b>{WITHDRAW_MIN:,.2f}</b>\n"
+        f" Максимум: {EMOJI_RUBLES}<b>{WITHDRAW_MAX:,.0f}</b>\n"
     )
 
 
@@ -248,82 +250,67 @@ def _t_withdraw_failed() -> str:
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f'<tg-emoji emoji-id="6030833407339008632">💎</tg-emoji> Не удалось создать чек.\n'
         f"Средства возвращены на баланс.\n"
-        f"Попробуйте позже или обратитесь в поддержку."
+        f"<small>Попробуйте позже или свяжитесь со спортом.</small>"
     )
 
 
-                                                                                
-                                             
-                                                                                
-
 def _edit(bot: telebot.TeleBot, chat_id: int, message_id: int,
-          text: str, markup=None):
+          text: str, markup):
     try:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode="HTML",
             reply_markup=markup,
+            parse_mode="HTML",
         )
-    except Exception as e:
-        logger.debug("edit_message_text failed: %s", e)
+    except Exception:
+        pass
 
-
-                                                                                
-                  
-                                                                                
 
 def _start_poll_loop(bot: telebot.TeleBot, client: CryptoPayClient):
-    def loop():
-        logger.info("CryptoPay poll loop started (interval=%ds)", POLL_INTERVAL)
+    def _poll():
         while True:
+            time.sleep(POLL_INTERVAL)
             try:
-                _poll_once(bot, client)
+                invoices = client.get_invoices(status="paid")
+                for inv in invoices:
+                    invoice_id = int(inv["invoice_id"])
+                    dep = db.deposit_get(invoice_id)
+                    if not dep or dep["status"] != "pending":
+                        continue
+
+                    uid     = dep["uid"]
+                    amount  = dep["amount"]
+                    state   = _get_state(uid)
+
+                    if state and state.get("step") == "deposit_waiting" and state.get("invoice_id") == invoice_id:
+                        db.deposit_mark_paid(invoice_id)
+                        db.add_balance(uid, amount)
+                        new_balance = db.get_balance(uid)
+
+                        if state:
+                            _edit(
+                                bot,
+                                state["chat_id"],
+                                state["message_id"],
+                                _t_deposit_success(amount, new_balance),
+                                _kb_back_profile(),
+                            )
+                            _clear_state(uid)
+                        else:
+                            try:
+                                bot.send_message(
+                                    uid,
+                                    _t_deposit_success(amount, new_balance),
+                                    parse_mode="HTML",
+                                )
+                            except Exception:
+                                pass
             except Exception as e:
                 logger.error("Poll loop error: %s", e)
-            time.sleep(POLL_INTERVAL)
 
-    t = threading.Thread(target=loop, daemon=True, name="cryptopay-poll")
-    t.start()
-
-
-def _poll_once(bot: telebot.TeleBot, client: CryptoPayClient):
-    paid = client.get_invoices(status="paid", count=100)
-    for inv in paid:
-        invoice_id = int(inv["invoice_id"])
-        row = db.deposit_get_by_invoice(invoice_id)
-        if not row or row["status"] != "pending":
-            continue
-
-        if not db.deposit_confirm(invoice_id):
-            continue
-
-        uid    = row["uid"]
-        amount = row["amount"]
-        db.add_balance(uid, amount)
-        new_balance = db.get_balance(uid)
-
-        state = _get_state(uid)
-        if state and state.get("step") == "deposit_waiting"\
-                and state.get("invoice_id") == invoice_id:
-            _edit(
-                bot,
-                state["chat_id"],
-                state["message_id"],
-                _t_deposit_success(amount, new_balance),
-                _kb_back_profile(),
-            )
-            _clear_state(uid)
-        else:
-            try:
-                bot.send_message(
-                    uid,
-                    _t_deposit_success(amount, new_balance),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+    threading.Thread(target=_poll, daemon=True).start()
 
 
                                                                                 
@@ -421,8 +408,8 @@ def register(bot: telebot.TeleBot):
             if not (DEPOSIT_MIN <= amount <= DEPOSIT_MAX):
                 _edit(
                     bot, chat_id, message_id,
-                    (f"{E_WARNING} Сумма: от <b>${DEPOSIT_MIN:,.2f}</b> "
-                     f"до <b>${DEPOSIT_MAX:,.0f}</b>.\n\n"
+                    (f"{E_WARNING} Сумма: от {EMOJI_RUBLES}<b>{DEPOSIT_MIN:,.2f}</b> "
+                     f"до {EMOJI_RUBLES}<b>{DEPOSIT_MAX:,.0f}</b>.\n\n"
                      + _t_deposit_ask()),
                     _kb_cancel_input(),
                 )
@@ -484,8 +471,8 @@ def register(bot: telebot.TeleBot):
             if not (WITHDRAW_MIN <= amount <= WITHDRAW_MAX):
                 _edit(
                     bot, chat_id, message_id,
-                    (f"{E_WARNING} Сумма: от <b>${WITHDRAW_MIN:,.2f}</b> "
-                     f"до <b>${WITHDRAW_MAX:,.0f}</b>.\n\n"
+                    (f"{E_WARNING} Сумма: от {EMOJI_RUBLES}<b>{WITHDRAW_MIN:,.2f}</b> "
+                     f"до {EMOJI_RUBLES}<b>{WITHDRAW_MAX:,.0f}</b>.\n\n"
                      + _t_withdraw_ask(balance)),
                     _kb_cancel_input(),
                 )
@@ -495,7 +482,7 @@ def register(bot: telebot.TeleBot):
                 _edit(
                     bot, chat_id, message_id,
                     (f'<tg-emoji emoji-id="5904462880941545555">💎</tg-emoji> Недостаточно средств!\n'
-                     f'<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Баланс: <b>${balance:,.2f}</b>\n\n'
+                     f'<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji> Баланс: {EMOJI_RUBLES}<b>{balance:,.2f}</b>\n\n'
                      + _t_withdraw_ask(balance)),
                     _kb_cancel_input(),
                 )
