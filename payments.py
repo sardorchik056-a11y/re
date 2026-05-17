@@ -11,7 +11,7 @@ import database as db
 
 logger = logging.getLogger(__name__)                                                                       
 
-CRYPTO_PAY_TOKEN  = "552018:AAmEzVekZI0E1Qcpi0ccOxbkOMk01J2Qs2n"
+CRYPTO_PAY_TOKEN  = "582363:AALEf7JOugnrQyrkMHzH5UrO7pdOjjYnTQy"
 CRYPTO_PAY_URL    = "https://pay.crypt.bot/api"
                                                        
 
