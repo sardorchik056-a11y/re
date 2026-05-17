@@ -31,7 +31,7 @@ EMOJI_CANCEL   = "6039539366177541657"
 EMOJI_BACK     = "6039539366177541657"                 
 EMOJI_CHECK    = "5258185631355378853"                        
 
-EMOJI_RUBLES = '₽'
+EMOJI_RUBLES = '<tg-emoji emoji-id="5398113771778491599">💰</tg-emoji>'
 
 E_WALLET   = '<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji>'
 E_MONEY    = '<tg-emoji emoji-id="5258204546391351475">💰</tg-emoji>'
