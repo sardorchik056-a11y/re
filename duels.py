@@ -38,7 +38,7 @@ NUM_EMOJI = {
 }
 
 # Custom emoji for rubles instead of dollar sign
-EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">₽</tg-emoji>'
+EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">💰</tg-emoji>'
 
 _lock = threading.Lock()
 
