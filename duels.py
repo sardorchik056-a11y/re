@@ -37,6 +37,9 @@ NUM_EMOJI = {
     6: '<tg-emoji emoji-id="5390966190283694453">6️⃣</tg-emoji>',
 }
 
+# Custom emoji for rubles instead of dollar sign
+EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">₽</tg-emoji>'
+
 _lock = threading.Lock()
 
                                                                                 
@@ -114,7 +117,7 @@ def _t_lobby(g, p1_display: str) -> str:
         f"{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Игрок:  <b>{p1_display}</b>\n'
-        f'<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:     <b>${g["bet"]:,.2f}</b>\n'
+        f'{EMOJI_RUBLES} Ставка:     <b>{g["bet"]:,.2f}</b>\n'
         f" <b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Нажми кнопку ниже чтобы присоедениться!</b>"
@@ -145,6 +148,32 @@ def _t_x(g, p1_display: str, p2_display: str,
     )
 
 
+def _calculate_total_score(scores: list, rounds: int) -> int:
+    """
+    Новая логика расчёта для режима total:
+    - 2 броска: просто сумма (старая логика)
+    - 3-4 броска: сумма всех кроме последнего * множитель последнего
+    - 5 бросков: сумма всех кроме последнего * множитель последнего
+    
+    Примеры:
+    - 2 броска [1, 3]: 1 + 3 = 4
+    - 3 броска [1, 3, 4]: (1 + 3) * 4 = 16
+    - 4 броска [3, 5, 1, 3]: (3 + 5 + 1) * 3 = 27
+    - 5 бросков [2, 1, 4, 3, 2]: (2 + 1 + 4 + 3) * 2 = 20
+    """
+    if not scores:
+        return 0
+    
+    if len(scores) == 2:
+        # При 2 бросках - просто сумма
+        return sum(scores)
+    else:
+        # При 3 и более бросках - сумма всех кроме последнего, умноженная на последний
+        sum_except_last = sum(scores[:-1])
+        last_multiplier = scores[-1]
+        return sum_except_last * last_multiplier
+
+
 def _t_total(g, p1_display: str, p2_display: str,
              p1_scores: list, p2_scores: list) -> str:
     e = DICE_EMOJI[g["game_type"]]
@@ -152,10 +181,20 @@ def _t_total(g, p1_display: str, p2_display: str,
 
     def row(p_display: str, scores: list) -> str:
         vals = " + ".join(str(v) for v in scores) if scores else "—"
-        s = sum(scores)
-        done = len(scores)
-        mark = " ✅" if done == rounds else f"  {done}/{rounds}"
-        return f"{PLAYER_ICON} {p_display}:  {vals}  =  <b>{s}</b>{mark}"
+        if len(scores) == rounds:
+            # Показываем расчёт согласно новой логике
+            final_score = _calculate_total_score(scores, rounds)
+            if rounds == 2:
+                calculation = f" = <b>{final_score}</b>"
+            else:
+                sum_part = " + ".join(str(v) for v in scores[:-1])
+                last = scores[-1]
+                calculation = f" = ({sum_part}) × {last} = <b>{final_score}</b>"
+            done = " ✅"
+        else:
+            calculation = f"  =  <b>{_calculate_total_score(scores, rounds)}</b>"
+            done = f"  {len(scores)}/{rounds}"
+        return f"{PLAYER_ICON} {p_display}:  {vals}{calculation}{done}"
 
     return (
         f"{e} <b>Сумма  |  {rounds} броска</b>\n"
@@ -178,7 +217,7 @@ def _t_finish(g, winner_display: Optional[str],
     else:
         result = (
             f'<tg-emoji emoji-id="5461151367559141950">👤</tg-emoji> Победитель: <b>{winner_display}</b>!\n'
-            f'<tg-emoji emoji-id="5890848474563352982">👤</tg-emoji> Выигрыш: <b>${g["bet"] * 2:,.2f}</b>'
+            f'{EMOJI_RUBLES} Выигрыш: <b>{g["bet"] * 2:,.2f}</b>'
         )
     if g["mode"] == "x":
         detail = (
@@ -187,7 +226,13 @@ def _t_finish(g, winner_display: Optional[str],
         )
     else:
         def row(p_d, scores):
-            return " + ".join(str(v) for v in scores) + f" = <b>{sum(scores)}</b>"
+            final_score = _calculate_total_score(scores, g["rounds"])
+            if g["rounds"] == 2:
+                return " + ".join(str(v) for v in scores) + f" = <b>{final_score}</b>"
+            else:
+                sum_part = " + ".join(str(v) for v in scores[:-1])
+                last = scores[-1]
+                return f"({sum_part}) × {last} = <b>{final_score}</b>"
         detail = (
             f"{PLAYER_ICON} {p1_display}: {row(p1_display, p1_scores)}\n"
             f"{PLAYER_ICON} {p2_display}: {row(p2_display, p2_scores)}"
@@ -210,7 +255,7 @@ def _t_my_games(games: list) -> str:
         mode = "до очков" if g["mode"] == "x" else "сумма"
         state = "👥 lobby" if g["state"] == "lobby" else "⚔️ играем"
         lines.append(
-            f"{e} ID:{g['id']}  ${g['bet']:,.2f}  {g['rounds']}р/{mode}  {state}"
+            f"{e} ID:{g['id']}  {g['bet']:,.2f}  {g['rounds']}р/{mode}  {state}"
         )
     lines.append("━━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
@@ -293,7 +338,7 @@ def register(bot: telebot.TeleBot):
             f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
-            f'<tg-emoji emoji-id="5904462880941545555">👤</tg-emoji> Ставка:    <b>${g["bet"]:,.2f}</b>\n'
+            f'{EMOJI_RUBLES} Ставка:    <b>{g["bet"]:,.2f}</b>\n'
             f" <b>{mode_lbl}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
         )
@@ -313,8 +358,8 @@ def register(bot: telebot.TeleBot):
                 f'💰 <b>Реферальное начисление!</b>\n'
                 f'━━━━━━━━━━━━━━━━━━━━━\n'
                 f'👤 Ваш реферал <b>{winner_display}</b> выиграл дуэль.\n'
-                f'➕ Начислено: <b>+${reward:,.2f}</b>\n'
-                f'💎 Ваш баланс: <b>${new_balance:,.2f}</b>',
+                f'➕ Начислено: <b>+{reward:,.2f}</b>\n'
+                f'💎 Ваш баланс: <b>{new_balance:,.2f}</b>',
                 parse_mode="HTML",
             )
         except Exception:
@@ -467,7 +512,9 @@ def register(bot: telebot.TeleBot):
         p1_d, p2_d = _load_displays(g)
 
         if len(p1_scores) == rounds and len(p2_scores) == rounds:
-            s1, s2 = sum(p1_scores), sum(p2_scores)
+            # Используем новую функцию расчёта
+            s1 = _calculate_total_score(p1_scores, rounds)
+            s2 = _calculate_total_score(p2_scores, rounds)
             if s1 > s2:
                 _end_game(g, winner_uid=p1_uid)
             elif s2 > s1:
@@ -497,7 +544,7 @@ def register(bot: telebot.TeleBot):
         if bet is None:
             bot.reply_to(
                 message,
-                f"❌ Укажи ставку от ${BET_MIN:.2f} до ${BET_MAX:,.0f}!\n"
+                f"❌ Укажи ставку от {BET_MIN:.2f} до {BET_MAX:,.0f}!\n"
                 f"Пример: <code>/{gtype}{mode}{rounds} 100</code>",
                 parse_mode="HTML",
             )
@@ -586,7 +633,7 @@ def register(bot: telebot.TeleBot):
             if db.get_balance(uid) < g["bet"]:
                 bot.answer_callback_query(
                     call.id,
-                    f"Недостаточно средств! Нужно: ${g['bet']:,.2f}",
+                    f"Недостаточно средств! Нужно: {g['bet']:,.2f}",
                     show_alert=True,
                 )
                 return
