@@ -180,21 +180,21 @@ def _t_total(g, p1_display: str, p2_display: str,
     rounds = g["rounds"]
 
     def row(p_display: str, scores: list) -> str:
-        vals = " + ".join(str(v) for v in scores) if scores else "—"
+        if not scores:
+            return f"{PLAYER_ICON} {p_display}:  \u2014  0/{rounds}"
         if len(scores) == rounds:
-            # Показываем расчёт согласно новой логике
             final_score = _calculate_total_score(scores, rounds)
             if rounds == 2:
-                calculation = f" = <b>{final_score}</b>"
+                vals = " + ".join(str(v) for v in scores)
+                formula = f"{vals} = <b>{final_score}</b>"
             else:
                 sum_part = " + ".join(str(v) for v in scores[:-1])
                 last = scores[-1]
-                calculation = f" = ({sum_part}) × {last} = <b>{final_score}</b>"
-            done = " ✅"
+                formula = f"({sum_part}) \u00d7 {last} = <b>{final_score}</b>"
+            return f"{PLAYER_ICON} {p_display}:  {formula} \u2705"
         else:
-            calculation = f"  =  <b>{_calculate_total_score(scores, rounds)}</b>"
-            done = f"  {len(scores)}/{rounds}"
-        return f"{PLAYER_ICON} {p_display}:  {vals}{calculation}{done}"
+            vals = " + ".join(str(v) for v in scores)
+            return f"{PLAYER_ICON} {p_display}:  {vals}  {len(scores)}/{rounds}"
 
     return (
         f"{e} <b>Сумма  |  {rounds} броска</b>\n"
