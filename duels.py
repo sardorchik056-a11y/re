@@ -37,8 +37,7 @@ NUM_EMOJI = {
     6: '<tg-emoji emoji-id="5390966190283694453">6️⃣</tg-emoji>',
 }
 
-# Custom emoji for rubles instead of dollar sign
-EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">💰</tg-emoji>'
+EMOJI_RUBLES = '<tg-emoji emoji-id="5398113771778491599">💰</tg-emoji>'
 
 _lock = threading.Lock()
 
@@ -358,8 +357,8 @@ def register(bot: telebot.TeleBot):
                 f'💰 <b>Реферальное начисление!</b>\n'
                 f'━━━━━━━━━━━━━━━━━━━━━\n'
                 f'👤 Ваш реферал <b>{winner_display}</b> выиграл дуэль.\n'
-                f'➕ Начислено: <b>+{reward:,.2f}</b>\n'
-                f'💎 Ваш баланс: <b>{new_balance:,.2f}</b>',
+                f'{EMOJI_RUBLES} Начислено: <b>+{reward:,.2f}</b>\n'
+                f'{EMOJI_RUBLES} Ваш баланс: <b>{new_balance:,.2f}</b>',
                 parse_mode="HTML",
             )
         except Exception:
