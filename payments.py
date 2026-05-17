@@ -31,8 +31,7 @@ EMOJI_CANCEL   = "6039539366177541657"
 EMOJI_BACK     = "6039539366177541657"                 
 EMOJI_CHECK    = "5258185631355378853"                        
 
-# Custom emoji for rubles instead of dollar sign
-EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">💰</tg-emoji>'
+EMOJI_RUBLES = '₽'
 
 E_WALLET   = '<tg-emoji emoji-id="5258204546391351475">💎</tg-emoji>'
 E_MONEY    = '<tg-emoji emoji-id="5258204546391351475">💰</tg-emoji>'
