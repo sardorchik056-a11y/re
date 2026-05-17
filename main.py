@@ -36,6 +36,9 @@ EMOJI_EARNED     = "5890848474563352982"
 EMOJI_CHAT       = "5258215846450305872"
 EMOJI_SUPPORT    = "5357069174512303778"
 EMOJI_NEWS       = "5258185631355378853"
+
+# Custom emoji for rubles instead of dollar sign
+EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">₽</tg-emoji>'
                                                                           
 DICE_EMOJI = {
     "cub":    "🎲",
@@ -125,7 +128,7 @@ def kb_active_games(games: list) -> InlineKeyboardMarkup:
     for g in games:
         e    = DICE_EMOJI.get(g["game_type"], "🎲")
         mode = "очки" if g["mode"] == "x" else "сумма"
-        label = f"{e} ${g['bet']:,.2f} | {g['rounds']}р {mode}"
+        label = f"{e} {g['bet']:,.2f} | {g['rounds']}р {mode}"
         m.row(InlineKeyboardButton(text=label, callback_data=f"duel_view:{g['id']}"))
     m.row(btn("Главное меню", "main_menu", EMOJI_BACK))
     return m
@@ -155,8 +158,8 @@ def text_profile(user) -> str:
         f'<tg-emoji emoji-id="{EMOJI_USERNAME}">✏️</tg-emoji> <b>Юзернейм:</b>  {username}\n'
         f'<tg-emoji emoji-id="{EMOJI_DAYS}">📅</tg-emoji> <b>В проекте:</b>  {days} дн.\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
-        f'<tg-emoji emoji-id="{EMOJI_BALANCE}">💎</tg-emoji> <b>Баланс:</b>  <b>${balance:,.2f}</b>\n'
-        f'<tg-emoji emoji-id="{EMOJI_TURNOVER}">🔄</tg-emoji> <b>Оборот:</b>  <b>${turnover:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_BALANCE}">💎</tg-emoji> <b>Баланс:</b>  {EMOJI_RUBLES}<b>{balance:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_TURNOVER}">🔄</tg-emoji> <b>Оборот:</b>  {EMOJI_RUBLES}<b>{turnover:,.2f}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━'
     )
 
@@ -168,10 +171,10 @@ def text_stats(period: str = "all") -> str:
     return (
         f'<tg-emoji emoji-id="{EMOJI_STATISTICS}">📊</tg-emoji> <b>Статистика — {label}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
-        f'<tg-emoji emoji-id="5904462880941545555">📥</tg-emoji> <b>Всего пополнений:</b>  <b>${s["total_dep"]:,.2f}</b>\n'
-        f'<tg-emoji emoji-id="5258043150110301407">📤</tg-emoji> <b>Всего выводов:</b>    <b>${s["total_with"]:,.2f}</b>\n'
-        f'<tg-emoji emoji-id="6030833407339008632">🔄</tg-emoji> <b>Оборот:</b>           <b>${s["turnover"]:,.2f}</b>\n'
-        f'<tg-emoji emoji-id="5890848474563352982">💰</tg-emoji> <b>Прибыль:</b>          <b>${s["profit"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="5904462880941545555">📥</tg-emoji> <b>Всего пополнений:</b>  {EMOJI_RUBLES}<b>{s["total_dep"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="5258043150110301407">📤</tg-emoji> <b>Всего выводов:</b>    {EMOJI_RUBLES}<b>{s["total_with"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="6030833407339008632">🔄</tg-emoji> <b>Оборот:</b>           {EMOJI_RUBLES}<b>{s["turnover"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="5890848474563352982">💰</tg-emoji> <b>Прибыль:</b>          {EMOJI_RUBLES}<b>{s["profit"]:,.2f}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━'
     )
 
@@ -186,7 +189,7 @@ def text_referrals(user) -> str:
         f'<tg-emoji emoji-id="{EMOJI_LINK}">🔗</tg-emoji> <b>Ваша ссылка:</b>\n'
         f'<code>{ref_link}</code>\n\n'
         f'<tg-emoji emoji-id="{EMOJI_INVITED}">👤</tg-emoji> <b>Приглашено:</b>  <b>{invited} чел.</b>\n'
-        f'<tg-emoji emoji-id="{EMOJI_EARNED}">💵</tg-emoji> <b>Заработано:</b>  <b>${earned:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="{EMOJI_EARNED}">💵</tg-emoji> <b>Заработано:</b>  {EMOJI_RUBLES}<b>{earned:,.2f}</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'Вы получаете <b>1%</b> от выигрыша каждого\n'
         f'приглашённого реферала — прямо на баланс!'
@@ -225,7 +228,7 @@ def text_duel_view(g) -> str:
         f'{e} <b>Дуэль — информация</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'<tg-emoji emoji-id="{EMOJI_GAMES}">⚔️</tg-emoji> <b>Режим:</b>  {mode_lbl}\n'
-        f'<tg-emoji emoji-id="{EMOJI_BALANCE}">💎</tg-emoji> <b>Ставка:</b>  <b>${g["bet"]:,.2f}</b>\n'
+        f'{EMOJI_RUBLES} <b>Ставка:</b>  <b>{g["bet"]:,.2f}</b>\n'
         f'<tg-emoji emoji-id="{EMOJI_PROFILE}">👤</tg-emoji> <b>Создатель:</b>  {p1_d}\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'Нажми <b>Присоединиться</b> чтобы вступить в игру!'
@@ -291,16 +294,16 @@ def cmd_add(message):
         f'✅ <b>Баланс пополнен</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'👤 ID: <code>{target_id}</code>\n'
-        f'💰 Начислено: <b>+${amount:,.2f}</b>\n'
-        f'💎 Новый баланс: <b>${new_balance:,.2f}</b>',
+        f'💰 Начислено: <b>+{amount:,.2f}</b>\n'
+        f'💎 Новый баланс: <b>{new_balance:,.2f}</b>',
     )
     try:
         bot.send_message(
             target_id,
             f'💰 <b>Вам начислен баланс!</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━━\n'
-            f'➕ Начислено: <b>+${amount:,.2f}</b>\n'
-            f'💎 Ваш баланс: <b>${new_balance:,.2f}</b>',
+            f'➕ Начислено: <b>+{amount:,.2f}</b>\n'
+            f'💎 Ваш баланс: <b>{new_balance:,.2f}</b>',
         )
     except Exception:
         bot.send_message(
@@ -357,15 +360,15 @@ def cmd_sub(message):
     warn = ""
     if actually_sub < amount:
         warn = (f'\n⚠️ Баланс был меньше — '
-                f'списано только <b>${actually_sub:,.2f}</b>')
+                f'списано только <b>{actually_sub:,.2f}</b>')
 
     bot.reply_to(
         message,
         f'✅ <b>Баланс списан</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'👤 ID: <code>{target_id}</code>\n'
-        f'💸 Списано: <b>-${actually_sub:,.2f}</b>\n'
-        f'💎 Новый баланс: <b>${new_balance:,.2f}</b>'
+        f'💸 Списано: <b>-{actually_sub:,.2f}</b>\n'
+        f'💎 Новый баланс: <b>{new_balance:,.2f}</b>'
         f'{warn}',
     )
     try:
@@ -373,8 +376,8 @@ def cmd_sub(message):
             target_id,
             f'⚠️ <b>С вашего баланса списаны средства!</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━━\n'
-            f'➖ Списано: <b>-${actually_sub:,.2f}</b>\n'
-            f'💎 Ваш баланс: <b>${new_balance:,.2f}</b>',
+            f'➖ Списано: <b>-{actually_sub:,.2f}</b>\n'
+            f'💎 Ваш баланс: <b>{new_balance:,.2f}</b>',
         )
     except Exception:
         bot.send_message(
