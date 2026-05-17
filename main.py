@@ -37,7 +37,7 @@ EMOJI_CHAT       = "5258215846450305872"
 EMOJI_SUPPORT    = "5357069174512303778"
 EMOJI_NEWS       = "5258185631355378853"
 
-EMOJI_RUBLES = '₽'
+EMOJI_RUBLES = '<tg-emoji emoji-id="5398113771778491599">💰</tg-emoji>'
                                                                           
 DICE_EMOJI = {
     "cub":    "🎲",
@@ -293,16 +293,16 @@ def cmd_add(message):
         f'✅ <b>Баланс пополнен</b>\n'
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'👤 ID: <code>{target_id}</code>\n'
-        f'💰 Начислено: <b>+{amount:,.2f}</b>\n'
-        f'💎 Новый баланс: <b>{new_balance:,.2f}</b>',
+        f'{EMOJI_RUBLES} Начислено: <b>+{amount:,.2f}</b>\n'
+        f'{EMOJI_RUBLES} Новый баланс: <b>{new_balance:,.2f}</b>',
     )
     try:
         bot.send_message(
             target_id,
             f'💰 <b>Вам начислен баланс!</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━━\n'
-            f'➕ Начислено: <b>+{amount:,.2f}</b>\n'
-            f'💎 Ваш баланс: <b>{new_balance:,.2f}</b>',
+            f'{EMOJI_RUBLES} Начислено: <b>+{amount:,.2f}</b>\n'
+            f'{EMOJI_RUBLES} Ваш баланс: <b>{new_balance:,.2f}</b>',
         )
     except Exception:
         bot.send_message(
@@ -367,7 +367,7 @@ def cmd_sub(message):
         f'━━━━━━━━━━━━━━━━━━━━━\n'
         f'👤 ID: <code>{target_id}</code>\n'
         f'💸 Списано: <b>-{actually_sub:,.2f}</b>\n'
-        f'💎 Новый баланс: <b>{new_balance:,.2f}</b>'
+        f'{EMOJI_RUBLES} Новый баланс: <b>{new_balance:,.2f}</b>'
         f'{warn}',
     )
     try:
@@ -376,7 +376,7 @@ def cmd_sub(message):
             f'⚠️ <b>С вашего баланса списаны средства!</b>\n'
             f'━━━━━━━━━━━━━━━━━━━━━\n'
             f'➖ Списано: <b>-{actually_sub:,.2f}</b>\n'
-            f'💎 Ваш баланс: <b>{new_balance:,.2f}</b>',
+            f'{EMOJI_RUBLES} Ваш баланс: <b>{new_balance:,.2f}</b>',
         )
     except Exception:
         bot.send_message(
