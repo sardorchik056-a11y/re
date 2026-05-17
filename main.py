@@ -37,8 +37,7 @@ EMOJI_CHAT       = "5258215846450305872"
 EMOJI_SUPPORT    = "5357069174512303778"
 EMOJI_NEWS       = "5258185631355378853"
 
-# Custom emoji for rubles instead of dollar sign
-EMOJI_RUBLES = '<tg-emoji emoji-id="5377746319601324795">💰</tg-emoji>'
+EMOJI_RUBLES = '₽'
                                                                           
 DICE_EMOJI = {
     "cub":    "🎲",
