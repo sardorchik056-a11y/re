@@ -5,7 +5,7 @@ import database as db
 import duels
 import payments
 
-BOT_TOKEN = "8796618330:AAHLie3NBXmDR5FqUiFhvwBtghU9aA5Vor0"
+BOT_TOKEN = "8610804137:AAFkdrZIDRAsdhn4fZP51-rcnrI5C8d4xpg"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")                                                                            
 
 ADMINS = {8118184388}
