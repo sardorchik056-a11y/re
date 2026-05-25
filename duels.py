@@ -116,7 +116,7 @@ def _t_lobby(g, p1_display: str) -> str:
         f"{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Игрок:  <b>{p1_display}</b>\n'
-        f'{EMOJI_RUBLES} Ставка:     <b>{g["bet"]:,.2f}</b>\n'
+        f'<tg-emoji emoji-id="5440457429147997980">👤</tg-emoji> Ставка:     <b>{g["bet"]:,.2f}</b>{EMOJI_RUBLES}\n'
         f" <b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Нажми кнопку ниже чтобы присоедениться!</b>"
@@ -212,11 +212,11 @@ def _t_finish(g, winner_display: Optional[str],
               draw=False) -> str:
     e = DICE_EMOJI[g["game_type"]]
     if draw:
-        result = '<tg-emoji emoji-id="5357122032674818130">👤</tg-emoji> <b>Ничья!</b> Ставки возвращаются.'
+        result = '<b><tg-emoji emoji-id="5357122032674818130">👤</tg-emoji> <b>Ничья!</b> Ставки возвращаются.</b>'
     else:
         result = (
-            f'<tg-emoji emoji-id="5413566144986503832">👤</tg-emoji> Победитель: <b>{winner_display}</b>!\n'
-            f'{EMOJI_RUBLES} Выигрыш: <b>{g["bet"] * 2:,.2f}</b>'
+            f'<b><tg-emoji emoji-id="5413566144986503832">👤</tg-emoji> Победитель: <b>{winner_display}</b>!\n'
+            f'<tg-emoji emoji-id="5224257782013769471">👤</tg-emoji> Выигрыш: <b>{g["bet"] * 2:,.2f}{EMOJI_RUBLES}</b></b>'
         )
     if g["mode"] == "x":
         detail = (
@@ -337,7 +337,7 @@ def register(bot: telebot.TeleBot):
             f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
-            f'{EMOJI_RUBLES} Ставка:    <b>{g["bet"]:,.2f}</b>\n'
+            f'<tg-emoji emoji-id="5440457429147997980">👤</tg-emoji> Ставка:    <b>{g["bet"]:,.2f}{EMOJI_RUBLES}</b>\n'
             f" <b>{mode_lbl}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
         )
