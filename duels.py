@@ -26,7 +26,7 @@ CMD_RE = re.compile(
     re.IGNORECASE,
 )
 
-PLAYER_ICON = '<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji>'
+PLAYER_ICON = '<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji>'
 
 NUM_EMOJI = {
     1: '<tg-emoji emoji-id="5382322671679708881">1️⃣</tg-emoji>',
@@ -115,7 +115,7 @@ def _t_lobby(g, p1_display: str) -> str:
     return (
         f"{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Игрок:  <b>{p1_display}</b>\n'
+        f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Игрок:  <b>{p1_display}</b>\n'
         f'{EMOJI_RUBLES} Ставка:     <b>{g["bet"]:,.2f}</b>\n'
         f" <b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -212,10 +212,10 @@ def _t_finish(g, winner_display: Optional[str],
               draw=False) -> str:
     e = DICE_EMOJI[g["game_type"]]
     if draw:
-        result = "🤝 <b>Ничья!</b> Ставки возвращаются."
+        result = '<tg-emoji emoji-id="5357122032674818130">👤</tg-emoji> <b>Ничья!</b> Ставки возвращаются.'
     else:
         result = (
-            f'<tg-emoji emoji-id="5461151367559141950">👤</tg-emoji> Победитель: <b>{winner_display}</b>!\n'
+            f'<tg-emoji emoji-id="5413566144986503832">👤</tg-emoji> Победитель: <b>{winner_display}</b>!\n'
             f'{EMOJI_RUBLES} Выигрыш: <b>{g["bet"] * 2:,.2f}</b>'
         )
     if g["mode"] == "x":
@@ -336,7 +336,7 @@ def register(bot: telebot.TeleBot):
         text = (
             f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f'<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
+            f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
             f'{EMOJI_RUBLES} Ставка:    <b>{g["bet"]:,.2f}</b>\n'
             f" <b>{mode_lbl}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
