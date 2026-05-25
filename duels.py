@@ -116,7 +116,7 @@ def _t_lobby(g, p1_display: str) -> str:
         f"<b>{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Игрок:  <b>{p1_display}</b>\n'
-        f'<tg-emoji emoji-id="5422444280473998663">👤</tg-emoji> Ставка:     <b>{g["bet"]:,.2f}</b>{EMOJI_RUBLES}\n'
+        f'<tg-emoji emoji-id="5422444280473998663">👤</tg-emoji> Ставка:     <b>{g["bet"]:,.2f} {EMOJI_RUBLES}</b>\n'
         f" <b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Нажми кнопку ниже чтобы присоедениться!</b></b>"
@@ -216,7 +216,7 @@ def _t_finish(g, winner_display: Optional[str],
     else:
         result = (
             f'<b><tg-emoji emoji-id="5413566144986503832">👤</tg-emoji> Победитель: <b>{winner_display}</b>!\n'
-            f'<tg-emoji emoji-id="5224257782013769471">👤</tg-emoji> Выигрыш: <b>{g["bet"] * 2:,.2f}{EMOJI_RUBLES}</b></b>'
+            f'<tg-emoji emoji-id="5224257782013769471">👤</tg-emoji> Выигрыш: <b>{g["bet"] * 2:,.2f} {EMOJI_RUBLES}</b></b>'
         )
     if g["mode"] == "x":
         detail = (
@@ -251,12 +251,25 @@ def _t_my_games(games: list) -> str:
     lines = ["📋 <b>Твои активные дуэли:</b>\n━━━━━━━━━━━━━━━━━━━━━"]
     for g in games:
         e = DICE_EMOJI.get(g["game_type"], "🎲")
-        mode = "до очков" if g["mode"] == "x" else "сумма"
-        state = "👥 lobby" if g["state"] == "lobby" else "⚔️ играем"
+        game_type_name = {
+            "cub":    "Кубик",
+            "dart":   "Дартс",
+            "basket": "Баскетбол",
+            "bowl":   "Боулинг",
+            "foot":   "Футбол",
+        }.get(g["game_type"], g["game_type"])
+        if g["mode"] == "x":
+            mode_desc = f"до {g['win_score']} побед"
+        else:
+            mode_desc = f"сумма за {g['rounds']} броска"
+        state = "👥 Ожидание" if g["state"] == "lobby" else "⚔️ В игре"
+        win_amount = g["bet"] * 2
         lines.append(
-            f"{e} ID:{g['id']}  {g['bet']:,.2f}{EMOJI_RUBLES}  {g['rounds']}р/{mode}  {state}"
+            f"\n{e} <b>{game_type_name}</b>  •  {state}\n"
+            f"💰 Ставка: <b>{g['bet']:,.2f} {EMOJI_RUBLES}</b>  →  Выигрыш: <b>{win_amount:,.2f} {EMOJI_RUBLES}</b>\n"
+            f"🎮 Режим: <b>{mode_desc}</b>"
         )
-    lines.append("━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
 
@@ -326,7 +339,7 @@ def register(bot: telebot.TeleBot):
             p2_d = "?"
         return p1_d, p2_d
 
-    def _notify_joined(g, joiner_uid: int, p1_d: str, p2_d: str, sent_msg):
+    def _notify_joined(g, joiner_uid: int, p1_d: str, p2_d: str, sent_msg, caller_chat_id: int = None):
         e = DICE_EMOJI.get(g["game_type"], "🎲")
         game_url = _build_game_url(sent_msg)
         mode_lbl = (
@@ -337,14 +350,16 @@ def register(bot: telebot.TeleBot):
             f"<b>{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
-            f'<tg-emoji emoji-id="5422444280473998663">👤</tg-emoji> Ставка:    <b>{g["bet"]:,.2f}{EMOJI_RUBLES}</b>\n'
+            f'<tg-emoji emoji-id="5422444280473998663">👤</tg-emoji> Ставка:    <b>{g["bet"]:,.2f} {EMOJI_RUBLES}</b>\n'
             f" <b>{mode_lbl}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n</b>"
         )
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("Ваша игра", url=game_url))
-        # Уведомление в личку только если игра запущена в боте (не в группе)
-        if g["chat_id"] > 0:
+        kb.add(InlineKeyboardButton("▶️ Перейти к игре", url=game_url))
+        # Отправляем уведомление в личку только если нажали из бота (раздел активных игр),
+        # а не из группового чата
+        from_bot_pm = caller_chat_id is not None and caller_chat_id > 0
+        if from_bot_pm:
             try:
                 bot.send_message(joiner_uid, text, parse_mode="HTML", reply_markup=kb)
             except Exception:
@@ -359,8 +374,8 @@ def register(bot: telebot.TeleBot):
                 f'💰 <b>Реферальное начисление!</b>\n'
                 f'━━━━━━━━━━━━━━━━━━━━━\n'
                 f'👤 Ваш реферал <b>{winner_display}</b> выиграл дуэль.\n'
-                f'{EMOJI_RUBLES} Начислено: <b>+{reward:,.2f}{EMOJI_RUBLES}</b>\n'
-                f'{EMOJI_RUBLES} Ваш баланс: <b>{new_balance:,.2f}{EMOJI_RUBLES}</b>',
+                f'{EMOJI_RUBLES} Начислено: <b>+{reward:,.2f} {EMOJI_RUBLES}</b>\n'
+                f'{EMOJI_RUBLES} Ваш баланс: <b>{new_balance:,.2f} {EMOJI_RUBLES}</b>',
                 parse_mode="HTML",
             )
         except Exception:
@@ -634,7 +649,7 @@ def register(bot: telebot.TeleBot):
             if db.get_balance(uid) < g["bet"]:
                 bot.answer_callback_query(
                     call.id,
-                    f"Недостаточно средств! Нужно: {g['bet']:,.2f}{EMOJI_RUBLES}",
+                    f"Недостаточно средств! Нужно: {g['bet']:,.2f} {EMOJI_RUBLES}",
                     show_alert=True,
                 )
                 return
@@ -659,7 +674,7 @@ def register(bot: telebot.TeleBot):
         sent = bot.send_message(g["chat_id"], text, parse_mode="HTML")
         db.game_set_game_msg(game_id, sent.message_id)
 
-        _notify_joined(g, uid, p1_d, p2_d, sent)
+        _notify_joined(g, uid, p1_d, p2_d, sent, caller_chat_id=call.message.chat.id)
 
                                                                               
 
