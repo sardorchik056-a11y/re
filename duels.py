@@ -37,7 +37,7 @@ NUM_EMOJI = {
     6: '<tg-emoji emoji-id="5390966190283694453">6️⃣</tg-emoji>',
 }
 
-EMOJI_RUBLES = '<tg-emoji emoji-id="5398113771778491599">💰</tg-emoji>'
+EMOJI_RUBLES = '₽'
 
 _lock = threading.Lock()
 
@@ -254,7 +254,7 @@ def _t_my_games(games: list) -> str:
         mode = "до очков" if g["mode"] == "x" else "сумма"
         state = "👥 lobby" if g["state"] == "lobby" else "⚔️ играем"
         lines.append(
-            f"{e} ID:{g['id']}  {g['bet']:,.2f}  {g['rounds']}р/{mode}  {state}"
+            f"{e} ID:{g['id']}  {g['bet']:,.2f}{EMOJI_RUBLES}  {g['rounds']}р/{mode}  {state}"
         )
     lines.append("━━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
@@ -343,10 +343,12 @@ def register(bot: telebot.TeleBot):
         )
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("Ваша игра", url=game_url))
-        try:
-            bot.send_message(joiner_uid, text, parse_mode="HTML", reply_markup=kb)
-        except Exception:
-            pass
+        # Уведомление в личку только если игра запущена в боте (не в группе)
+        if g["chat_id"] > 0:
+            try:
+                bot.send_message(joiner_uid, text, parse_mode="HTML", reply_markup=kb)
+            except Exception:
+                pass
 
     def _notify_referrer(ref_uid: int, winner_display: str,
                          reward: float, game_id: int):
@@ -357,8 +359,8 @@ def register(bot: telebot.TeleBot):
                 f'💰 <b>Реферальное начисление!</b>\n'
                 f'━━━━━━━━━━━━━━━━━━━━━\n'
                 f'👤 Ваш реферал <b>{winner_display}</b> выиграл дуэль.\n'
-                f'{EMOJI_RUBLES} Начислено: <b>+{reward:,.2f}</b>\n'
-                f'{EMOJI_RUBLES} Ваш баланс: <b>{new_balance:,.2f}</b>',
+                f'{EMOJI_RUBLES} Начислено: <b>+{reward:,.2f}{EMOJI_RUBLES}</b>\n'
+                f'{EMOJI_RUBLES} Ваш баланс: <b>{new_balance:,.2f}{EMOJI_RUBLES}</b>',
                 parse_mode="HTML",
             )
         except Exception:
@@ -632,7 +634,7 @@ def register(bot: telebot.TeleBot):
             if db.get_balance(uid) < g["bet"]:
                 bot.answer_callback_query(
                     call.id,
-                    f"Недостаточно средств! Нужно: {g['bet']:,.2f}",
+                    f"Недостаточно средств! Нужно: {g['bet']:,.2f}{EMOJI_RUBLES}",
                     show_alert=True,
                 )
                 return
