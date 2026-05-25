@@ -113,13 +113,13 @@ def _t_lobby(g, p1_display: str) -> str:
     else:
         mode_lbl = f"{g['rounds']} бросков • сумма"
     return (
-        f"{e} <b>Игра создана!</b>\n"
+        f"<b>{e} <b>Игра создана!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Игрок:  <b>{p1_display}</b>\n'
-        f'<tg-emoji emoji-id="5440457429147997980">👤</tg-emoji> Ставка:     <b>{g["bet"]:,.2f}</b>{EMOJI_RUBLES}\n'
+        f'<tg-emoji emoji-id="5422444280473998663">👤</tg-emoji> Ставка:     <b>{g["bet"]:,.2f}</b>{EMOJI_RUBLES}\n'
         f" <b>{mode_lbl}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Нажми кнопку ниже чтобы присоедениться!</b>"
+        f"<b>Нажми кнопку ниже чтобы присоедениться!</b></b>"
     )
 
 
@@ -137,13 +137,13 @@ def _t_x(g, p1_display: str, p2_display: str,
 
     result_line = f"\n {last_round_result}\n\n" if last_round_result else "\n"
     return (
-        f"{e} <b>Раунд {rnd}  |  до {ws} очков!</b>\n"
+        f"<b>{e} <b>Раунд {rnd}  |  до {ws} очков!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{PLAYER_ICON} {p1_display}  {_score_bar(p1_pts, ws)}  {status(p1_round_val)}\n"
         f"{PLAYER_ICON} {p2_display}  {_score_bar(p2_pts, ws)}  {status(p2_round_val)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━"
         f"{result_line}"
-        f"Отправьте {e} — в ответ на это сообщение!"
+        f"Отправьте {e} — в ответ на это сообщение!</b>"
     )
 
 
@@ -196,12 +196,12 @@ def _t_total(g, p1_display: str, p2_display: str,
             return f"{PLAYER_ICON} {p_display}:  {vals}  {len(scores)}/{rounds}"
 
     return (
-        f"{e} <b>Сумма  |  {rounds} броска</b>\n"
+        f"<b>{e} <b>Сумма  |  {rounds} броска</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{row(p1_display, p1_scores)}\n"
         f"{row(p2_display, p2_scores)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Отправьте {e} — в ответ на это сообщение!"
+        f"Отправьте {e} — в ответ на это сообщение!</b>"
     )
 
 
@@ -237,11 +237,11 @@ def _t_finish(g, winner_display: Optional[str],
             f"{PLAYER_ICON} {p2_display}: {row(p2_display, p2_scores)}"
         )
     return (
-        f"{e} <b>Игра окончена!</b>\n"
+        f"<b>{e} <b>Игра окончена!</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{detail}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{result}"
+        f"{result}</b>"
     )
 
 
@@ -334,12 +334,12 @@ def register(bot: telebot.TeleBot):
             else f"{g['rounds']} бросков • сумма"
         )
         text = (
-            f"{e} <b>Ты успешно присоединился к дуэли!</b>\n"
+            f"<b>{e} <b>Ты успешно присоединился к дуэли!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f'<tg-emoji emoji-id="5452085950022707790">👤</tg-emoji> Соперник:  <b>{p1_d}</b>\n'
             f'<tg-emoji emoji-id="5440457429147997980">👤</tg-emoji> Ставка:    <b>{g["bet"]:,.2f}{EMOJI_RUBLES}</b>\n'
             f" <b>{mode_lbl}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n</b>"
         )
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("Ваша игра", url=game_url))
